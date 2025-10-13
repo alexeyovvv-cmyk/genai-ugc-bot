@@ -3,4 +3,3 @@ builder = "nixpacks"
 
 [deploy]
 startCommand = "python -m tg_bot.main"
-restartPolicyType = "on-failure"
