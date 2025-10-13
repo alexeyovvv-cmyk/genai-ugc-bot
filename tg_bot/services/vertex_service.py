@@ -18,7 +18,8 @@ VIDEO_DIR.mkdir(parents=True, exist_ok=True)
 async def generate_video_veo3(
     prompt: str,
     duration_seconds: int = 5,
-    aspect_ratio: str = "9:16"  # Portrait format for mobile
+    aspect_ratio: str = "9:16",  # Portrait format for mobile
+    image_path: Optional[str] = None  # Стартовый кадр для video generation
 ) -> Optional[str]:
     """
     Generate video using Replicate Veo 3 model.
@@ -27,49 +28,62 @@ async def generate_video_veo3(
         prompt: Text description for video generation
         duration_seconds: Video duration (default 5 seconds)
         aspect_ratio: Video aspect ratio (default "9:16" for mobile)
+        image_path: Path to starting image/frame (optional)
     
     Returns:
         Path to generated video file, or None if generation failed
     """
     try:
-        print(f"Generating video with Replicate Veo 3...")
-        print(f"Prompt: '{prompt}'")
-        print(f"Duration: {duration_seconds}s, Aspect ratio: {aspect_ratio}")
+        import sys
+        print(f"[VEO3] Generating video with Replicate Veo 3...", flush=True)
+        print(f"[VEO3] Prompt: '{prompt}'", flush=True)
+        print(f"[VEO3] Duration: {duration_seconds}s, Aspect ratio: {aspect_ratio}", flush=True)
+        print(f"[VEO3] Image path: {image_path}", flush=True)
+        sys.stderr.write(f"[VEO3] Starting generation...\n")
+        sys.stderr.flush()
         
         if not REPLICATE_API_TOKEN:
-            print("REPLICATE_API_TOKEN not found in environment")
+            print("[VEO3] ❌ REPLICATE_API_TOKEN not found in environment", flush=True)
             return None
         
         # Use synchronous function in thread to avoid blocking
         video_path = await asyncio.to_thread(
-            _sync_generate_video_replicate, prompt, duration_seconds, aspect_ratio
+            _sync_generate_video_replicate, prompt, duration_seconds, aspect_ratio, image_path
         )
         
         if video_path:
-            print(f"Video generated successfully: {video_path}")
+            print(f"[VEO3] ✅ Video generated successfully: {video_path}", flush=True)
             return video_path
         else:
-            print("Video generation failed")
+            print("[VEO3] ❌ Video generation failed", flush=True)
             return None
         
     except Exception as e:
-        print(f"Replicate Veo 3 video generation failed: {e}")
+        print(f"[VEO3] ❌ Replicate Veo 3 video generation failed: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
         return None
 
 
-def _sync_generate_video_replicate(prompt: str, duration_seconds: int, aspect_ratio: str) -> Optional[str]:
+def _sync_generate_video_replicate(prompt: str, duration_seconds: int, aspect_ratio: str, image_path: Optional[str] = None) -> Optional[str]:
     """
     Generate video using Replicate Veo 3 API.
     
     Replicate provides access to Google's Veo 3 model without quota issues.
     """
+    import sys
     try:
         import replicate
+        
+        sys.stderr.write("[VEO3] Initializing Replicate client...\n")
+        sys.stderr.flush()
         
         # Initialize Replicate client
         client = replicate.Client(api_token=REPLICATE_API_TOKEN)
         
-        print("Starting Veo 3 generation via Replicate...")
+        print("[VEO3] Starting Veo 3 generation via Replicate...", flush=True)
+        sys.stderr.write(f"[VEO3] Image path provided: {image_path is not None}\n")
+        sys.stderr.flush()
         
         # Map aspect ratio to Replicate format
         # Replicate Veo 3 supports: 16:9, 9:16, 1:1
@@ -89,6 +103,8 @@ def _sync_generate_video_replicate(prompt: str, duration_seconds: int, aspect_ra
         }
         replicate_duration = duration_mapping.get(duration_seconds, 4)
         
+        print(f"[VEO3] Using aspect_ratio={replicate_ratio}, duration={replicate_duration}s", flush=True)
+        
         # Try Veo 3 first, fallback to cheaper models
         models_to_try = [
             "google/veo-3",
@@ -99,18 +115,42 @@ def _sync_generate_video_replicate(prompt: str, duration_seconds: int, aspect_ra
         output = None
         for model in models_to_try:
             try:
-                print(f"Trying model: {model}")
+                print(f"[VEO3] Trying model: {model}", flush=True)
+                sys.stderr.write(f"[VEO3] Model: {model}\n")
+                sys.stderr.flush()
+                
                 if "veo-3" in model:
-                    output = client.run(
-                        model,
-                        input={
-                            "prompt": prompt,
-                            "aspect_ratio": replicate_ratio,
-                            "duration": replicate_duration
-                        }
-                    )
+                    # Veo 3 input parameters
+                    input_params = {
+                        "prompt": prompt,
+                        "aspect_ratio": replicate_ratio,
+                        "duration": replicate_duration
+                    }
+                    
+                    # Add image if provided
+                    if image_path:
+                        print(f"[VEO3] Adding image_prompt from: {image_path}", flush=True)
+                        sys.stderr.write(f"[VEO3] Reading image file...\n")
+                        sys.stderr.flush()
+                        
+                        # Open and read image file
+                        with open(image_path, "rb") as img_file:
+                            input_params["image"] = img_file
+                            print(f"[VEO3] Image added to input params", flush=True)
+                            
+                            sys.stderr.write(f"[VEO3] Calling Replicate API...\n")
+                            sys.stderr.flush()
+                            
+                            output = client.run(model, input=input_params)
+                    else:
+                        sys.stderr.write(f"[VEO3] Calling Replicate API without image...\n")
+                        sys.stderr.flush()
+                        output = client.run(model, input=input_params)
                 else:
                     # Different input format for other models
+                    sys.stderr.write(f"[VEO3] Using fallback model format...\n")
+                    sys.stderr.flush()
+                    
                     output = client.run(
                         model,
                         input={
@@ -119,10 +159,17 @@ def _sync_generate_video_replicate(prompt: str, duration_seconds: int, aspect_ra
                             "height": 1024 if replicate_ratio == "9:16" else 576
                         }
                     )
-                print(f"✅ Success with model: {model}")
+                
+                print(f"[VEO3] ✅ Success with model: {model}", flush=True)
+                sys.stderr.write(f"[VEO3] ✅ Model succeeded\n")
+                sys.stderr.flush()
                 break
             except Exception as e:
-                print(f"❌ Failed with {model}: {str(e)[:100]}...")
+                print(f"[VEO3] ❌ Failed with {model}: {str(e)[:200]}...", flush=True)
+                sys.stderr.write(f"[VEO3] ❌ Error: {str(e)[:200]}\n")
+                sys.stderr.flush()
+                import traceback
+                traceback.print_exc()
                 continue
         
         print(f"Replicate output: {output}")

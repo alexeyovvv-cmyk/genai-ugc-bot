@@ -16,7 +16,6 @@ from tg_bot.keyboards import (
     back_to_main_menu
 )
 from tg_bot.states import UGCCreation
-from tg_bot.services.elevenlabs_service import tts_to_file, DEFAULT_VOICES
 from tg_bot.services.vertex_service import generate_video_veo3
 from tg_bot.utils.files import list_start_frames
 from tg_bot.utils.user_state import (
@@ -26,10 +25,7 @@ from tg_bot.utils.user_state import (
     get_character_text,
     set_situation_prompt,
     get_situation_prompt,
-    get_selected_voice,
-    set_selected_voice,
 )
-from tg_bot.utils.voices import list_voice_samples
 
 load_dotenv()
 
@@ -125,7 +121,7 @@ async def show_faq(c: CallbackQuery):
    • Выбери персонажа из готовых вариантов
    • Напиши текст, который должен сказать персонаж
    • Опиши ситуацию для видео
-   • Получи готовое видео!
+   • Получи готовое видео с говорящим персонажем!
 
 2️⃣ <b>Стоимость</b>
    • Генерация видео: 1 кредит
@@ -133,9 +129,9 @@ async def show_faq(c: CallbackQuery):
 
 3️⃣ <b>Технические детали</b>
    • Видео генерируется с помощью Google Veo3
-   • Голос создается через ElevenLabs
+   • Персонаж "говорит" текст в видео
    • Формат видео: 9:16 (вертикальное)
-   • Длительность: 4-8 секунд
+   • Длительность: 6 секунд
 
 Если возникли вопросы — пиши в поддержку!
 """
@@ -230,13 +226,23 @@ async def character_text_received(m: Message, state: FSMContext):
 
 @dp.message(UGCCreation.waiting_situation_prompt)
 async def situation_prompt_received(m: Message, state: FSMContext):
+    import sys
+    
+    def log(msg):
+        """Логирование с принудительным flush"""
+        print(msg, flush=True)
+        sys.stdout.flush()
+    
+    log(f"[UGC] User {m.from_user.id} начал создание UGC рекламы")
+    
     # Сохраняем промпт
     set_situation_prompt(m.from_user.id, m.text)
-    print(f"User {m.from_user.id} ввел промпт: {m.text[:50]}...")
+    log(f"[UGC] Промпт сохранен: {m.text[:50]}...")
     
     # Списываем кредит
     ok = spend_credits(m.from_user.id, 1, "ugc_video_creation")
     if not ok:
+        log(f"[UGC] Недостаточно кредитов у user {m.from_user.id}")
         await m.answer(
             "❌ Недостаточно кредитов (нужен 1 кредит).\n\n"
             "Свяжись с администратором для пополнения.",
@@ -245,77 +251,102 @@ async def situation_prompt_received(m: Message, state: FSMContext):
         await state.clear()
         return
     
+    log(f"[UGC] Кредит списан успешно")
+    
     try:
         await m.answer("⏳ Начинаю создание UGC рекламы...\n\nЭто займет несколько минут.")
+        log(f"[UGC] Стартовое сообщение отправлено")
         
         # Получаем сохраненные данные
+        log(f"[UGC] Получаем сохраненные данные...")
         character_idx = get_selected_character(m.from_user.id)
         character_text = get_character_text(m.from_user.id)
         situation_prompt = get_situation_prompt(m.from_user.id)
         
+        log(f"[UGC] Данные получены: character_idx={character_idx}, text={character_text[:30] if character_text else 'None'}...")
+        
         frames = list_start_frames()[:5]
+        log(f"[UGC] Найдено {len(frames)} кадров")
+        
         selected_frame = frames[character_idx] if character_idx is not None and character_idx < len(frames) else None
         
         if not selected_frame:
+            log(f"[UGC] ❌ Кадр не найден!")
             raise Exception("Не удалось найти выбранный кадр")
         
-        # 1. Генерируем аудио с текстом персонажа
-        await m.answer("🎤 Шаг 1/3: Создаю голос персонажа...")
+        log(f"[UGC] Выбран кадр: {selected_frame}")
         
-        # Используем первый доступный голос
-        samples = list_voice_samples()
-        if not samples:
-            raise Exception("Нет доступных голосов")
-        
-        voice_id = samples[0][1]  # Берем первый голос
-        audio_path = await tts_to_file(character_text, voice_id)
-        
-        # 2. Генерируем видео с помощью Veo3
-        await m.answer("🎬 Шаг 2/3: Генерирую видео... (это может занять 2-3 минуты)")
+        # Генерируем видео с помощью Veo3
+        # Передаем стартовый кадр и объединенный промпт (ситуация + что говорит персонаж)
+        await m.answer("🎬 Генерирую видео с персонажем... (это может занять 2-3 минуты)")
+        log(f"[UGC] Начинаем генерацию видео...")
         
         # Комбинируем промпт: описание ситуации + что говорит персонаж
         full_prompt = f"{situation_prompt}. Персонаж говорит: '{character_text}'"
+        log(f"[UGC] Промпт для видео: {full_prompt[:100]}...")
+        log(f"[UGC] Стартовый кадр: {selected_frame}")
         
-        video_path = await generate_video_veo3(
-            prompt=full_prompt,
-            duration_seconds=6,  # Стандартная длительность
-            aspect_ratio="9:16"
-        )
+        try:
+            video_path = await generate_video_veo3(
+                prompt=full_prompt,
+                duration_seconds=6,  # Стандартная длительность
+                aspect_ratio="9:16",
+                image_path=selected_frame  # Передаем стартовый кадр
+            )
+            log(f"[UGC] Видео сгенерировано: {video_path}")
+        except Exception as video_error:
+            log(f"[UGC] ❌ Ошибка при генерации видео: {video_error}")
+            import traceback
+            traceback.print_exc()
+            raise Exception(f"Ошибка генерации видео: {str(video_error)}")
         
         if video_path:
-            await m.answer("✅ Шаг 3/3: Отправляю готовое видео...")
+            await m.answer("✅ Отправляю готовое видео...")
+            log(f"[UGC] Отправляем видео пользователю...")
+            
             await m.answer_video(
                 FSInputFile(video_path), 
                 caption="🎉 Твоя UGC реклама готова!\n\n(-1 кредит списан)"
             )
+            log(f"[UGC] ✅ Видео отправлено успешно")
             
             # Очистка временных файлов
             try:
-                os.remove(audio_path)
-                os.remove(video_path)
-                print(f"Cleaned up files: {audio_path}, {video_path}")
+                if os.path.exists(video_path):
+                    os.remove(video_path)
+                log(f"[UGC] Файл очищен: {video_path}")
             except Exception as cleanup_error:
-                print(f"Failed to cleanup files: {cleanup_error}")
+                log(f"[UGC] ⚠️ Не удалось очистить файл: {cleanup_error}")
         else:
-            raise Exception("Не удалось сгенерировать видео")
+            log(f"[UGC] ❌ Генерация вернула None")
+            raise Exception("Не удалось сгенерировать видео. Попробуйте позже.")
             
         await m.answer(
             "Хочешь создать еще одну рекламу?",
             reply_markup=main_menu()
         )
+        log(f"[UGC] ✅ UGC реклама завершена успешно для user {m.from_user.id}")
         
     except Exception as e:
         # Возвращаем кредит при ошибке
+        log(f"[UGC] ❌ ОШИБКА для user {m.from_user.id}: {str(e)}")
+        import traceback
+        log(f"[UGC] Traceback:\n{traceback.format_exc()}")
+        
         from tg_bot.utils.credits import add_credits
         add_credits(m.from_user.id, 1, "refund_ugc_fail")
-        print(f"UGC Creation Error for user {m.from_user.id}: {e}")
+        log(f"[UGC] Кредит возвращен")
+        
+        error_msg = str(e)
         await m.answer(
-            "❌ Что-то пошло не так при создании рекламы.\n\n"
-            "Кредит возвращен. Попробуй позже или свяжись с поддержкой.",
+            f"❌ Что-то пошло не так при создании рекламы.\n\n"
+            f"Ошибка: {error_msg[:100]}\n\n"
+            f"Кредит возвращен. Попробуй позже или свяжись с поддержкой.",
             reply_markup=main_menu()
         )
     finally:
         await state.clear()
+        log(f"[UGC] Состояние очищено для user {m.from_user.id}")
 
 # --- Navigation ---
 @dp.callback_query(F.data == "back_to_main")
