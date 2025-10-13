@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Local data - exclude generated files but keep voice samples and frames
+data/audio/tts_*.mp3
+data/video/*.mp4
+genai.db
+
+# Environment files (secrets)
+.env
+.env.local
+
+# Documentation
+README.md
+*.md
+
+# Test files
+test_*
+*_test.py

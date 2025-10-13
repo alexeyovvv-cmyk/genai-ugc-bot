@@ -1,0 +1,42 @@
+# Environment variables
+.env
+.env.local
+
+# Database
+genai.db
+genai.db-journal
+
+# Generated files
+data/audio/tts_*.mp3
+data/video/*.mp4
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+bot.log
+
+# Temporary files
+*.tmp
+*.temp
