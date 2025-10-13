@@ -1,6 +1,7 @@
 # Environment variables
 .env
 .env.local
+.secret
 
 # Database
 genai.db
@@ -40,3 +41,4 @@ bot.log
 # Temporary files
 *.tmp
 *.temp
+.secure/
