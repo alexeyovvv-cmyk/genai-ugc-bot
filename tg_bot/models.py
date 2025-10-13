@@ -10,7 +10,7 @@ class User(Base):
     __tablename__ = "users"
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     tg_id: Mapped[int] = mapped_column(unique=True, index=True)
-    credits: Mapped[int] = mapped_column(Integer, default=10)
+    credits: Mapped[int] = mapped_column(Integer, default=100)
     selected_voice_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     created_at: Mapped[str] = mapped_column(DateTime, server_default=func.now())
 
@@ -37,5 +37,9 @@ class UserState(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), unique=True)
     selected_frame_path: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     last_audio_path: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # Новые поля для UGC рекламы
+    selected_character_idx: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # индекс выбранного персонажа
+    character_text: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # текст, что должен сказать персонаж
+    situation_prompt: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # описание ситуации для видео
     created_at: Mapped[str] = mapped_column(DateTime, server_default=func.now())
     # updated_at можно добавить позже триггером, пока не требуется

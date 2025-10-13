@@ -9,33 +9,58 @@ from aiogram.fsm.context import FSMContext
 from tg_bot.db import engine
 from tg_bot.models import Base
 from tg_bot.utils.credits import ensure_user, get_credits, spend_credits
-from tg_bot.keyboards import main_menu, voices_menu, frame_choice_menu, voice_choice_menu
-from tg_bot.states import HookGen, AudioGen, FrameEdit, VideoGen
-from tg_bot.services.openai_service import generate_hooks
+from tg_bot.keyboards import (
+    main_menu, 
+    ugc_start_menu, 
+    character_choice_menu, 
+    back_to_main_menu
+)
+from tg_bot.states import UGCCreation
 from tg_bot.services.elevenlabs_service import tts_to_file, DEFAULT_VOICES
-from tg_bot.services.higgsfield_service import edit_image, create_talking_video
 from tg_bot.services.vertex_service import generate_video_veo3
 from tg_bot.utils.files import list_start_frames
 from tg_bot.utils.user_state import (
-    get_selected_frame,
-    set_selected_frame,
+    set_selected_character,
+    get_selected_character,
+    set_character_text,
+    get_character_text,
+    set_situation_prompt,
+    get_situation_prompt,
     get_selected_voice,
     set_selected_voice,
-    get_last_audio,
-    set_last_audio,
 )
 from tg_bot.utils.voices import list_voice_samples
 
 load_dotenv()
-print("DEBUG TELEGRAM_BOT_TOKEN:", os.environ.get("TELEGRAM_BOT_TOKEN"))
+
+# Check for required environment variables
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+if not TELEGRAM_BOT_TOKEN:
+    print("=" * 80)
+    print("❌ ERROR: TELEGRAM_BOT_TOKEN not found in environment variables!")
+    print("=" * 80)
+    print("")
+    print("Please set the following environment variable in Railway:")
+    print("")
+    print("  TELEGRAM_BOT_TOKEN=your_bot_token_here")
+    print("")
+    print("Get your token from: https://t.me/BotFather")
+    print("")
+    print("See ENV_VARIABLES.md for full list of required variables.")
+    print("=" * 80)
+    raise ValueError("TELEGRAM_BOT_TOKEN environment variable is required")
+
+print(f"✅ Bot token found: {TELEGRAM_BOT_TOKEN[:10]}...")
+
 base_dir_env = os.getenv("BASE_DIR")
 if base_dir_env is None:
-    print("Warning: BASE_DIR is not set in the environment. Using current directory as BASE_DIR.")
+    print("⚠️  Warning: BASE_DIR is not set in environment. Using current directory as BASE_DIR.")
     BASE_DIR = pathlib.Path(".")
 else:
     BASE_DIR = pathlib.Path(base_dir_env)
+    print(f"✅ BASE_DIR: {BASE_DIR}")
 
-bot = Bot(token=os.environ["TELEGRAM_BOT_TOKEN"])
+bot = Bot(token=TELEGRAM_BOT_TOKEN)
 dp = Dispatcher()
 
 # Выборы пользователя и путь к последнему аудио теперь сохраняются в БД
@@ -43,13 +68,25 @@ dp = Dispatcher()
 @dp.startup()
 async def on_startup():
     # создаём таблицы
-    Base.metadata.create_all(bind=engine)
+    print("🔧 Creating database tables if they don't exist...")
+    try:
+        Base.metadata.create_all(bind=engine)
+        print("✅ Database tables created/verified successfully")
+        
+        # Show table names
+        from sqlalchemy import inspect
+        inspector = inspect(engine)
+        tables = inspector.get_table_names()
+        print(f"📊 Available tables: {', '.join(tables) if tables else 'none yet'}")
+    except Exception as e:
+        print(f"❌ Error creating database tables: {e}")
+        raise
 
 @dp.message(CommandStart())
 async def cmd_start(m: Message):
     ensure_user(m.from_user.id)
     await m.answer(
-        "Привет! Это GenAI UGC Ads бот.\nУ тебя 10 стартовых кредитов. Что делаем?",
+        "Привет! Это GenAI UGC Ads бот.\nУ тебя 100 стартовых кредитов. Что делаем?",
         reply_markup=main_menu()
     )
 
@@ -59,162 +96,211 @@ async def show_credits(c: CallbackQuery):
     await c.message.answer(f"У тебя сейчас {cts} кредитов.", reply_markup=main_menu())
     await c.answer()
 
-# --- Генерация хуков ---
-@dp.callback_query(F.data == "hooks")
-async def ask_desc(c: CallbackQuery, state: FSMContext):
-    await state.set_state(HookGen.waiting_description)
-    await c.message.answer("Опиши продукт и акцию одной строкой. Пример: «Новые протеиновые батончики, -20% до пятницы».")
+# --- FAQ ---
+@dp.callback_query(F.data == "faq")
+async def show_faq(c: CallbackQuery):
+    faq_text = """
+❓ <b>Как пользоваться ботом</b>
+
+1️⃣ <b>Создать UGC рекламу</b>
+   • Выбери персонажа из готовых вариантов
+   • Напиши текст, который должен сказать персонаж
+   • Опиши ситуацию для видео
+   • Получи готовое видео!
+
+2️⃣ <b>Стоимость</b>
+   • Генерация видео: 1 кредит
+   • При регистрации: 100 бесплатных кредитов
+
+3️⃣ <b>Технические детали</b>
+   • Видео генерируется с помощью Google Veo3
+   • Голос создается через ElevenLabs
+   • Формат видео: 9:16 (вертикальное)
+   • Длительность: 4-8 секунд
+
+Если возникли вопросы — пиши в поддержку!
+"""
+    await c.message.answer(faq_text, parse_mode="HTML", reply_markup=back_to_main_menu())
     await c.answer()
 
-@dp.message(HookGen.waiting_description)
-async def do_hooks(m: Message, state: FSMContext):
-    await m.answer("Думаю над 3–4 хук-фразами…")
-    hooks = await generate_hooks(m.text, n=4)
-    txt = "Готово:\n" + "\n".join([f"{i+1}) {h}" for i,h in enumerate(hooks)])
-    await m.answer(txt, reply_markup=main_menu())
-    await state.clear()
+# --- UGC Creation Flow ---
+@dp.callback_query(F.data == "create_ugc")
+async def start_ugc_creation(c: CallbackQuery):
+    await c.message.edit_text(
+        "🎬 <b>Создание UGC рекламы</b>\n\n"
+        "Выбери один из вариантов:",
+        parse_mode="HTML",
+        reply_markup=ugc_start_menu()
+    )
+    await c.answer()
 
-# --- Выбор стартового кадра ---
-@dp.callback_query(F.data == "pick_frame")
-async def pick_frame(c: CallbackQuery):
+@dp.callback_query(F.data == "create_character")
+async def create_character(c: CallbackQuery):
+    await c.message.answer(
+        "✨ <b>Создание персонажа</b>\n\n"
+        "Эта функция пока недоступна, но скоро появится! 🚀\n\n"
+        "Используй пока готовых персонажей.",
+        parse_mode="HTML",
+        reply_markup=back_to_main_menu()
+    )
+    await c.answer()
+
+@dp.callback_query(F.data == "select_character")
+async def select_character(c: CallbackQuery):
     frames = list_start_frames()[:5]
     if not frames:
-        await c.message.answer("Пока нет стартовых кадров. Свяжитесь с администратором.")
+        await c.message.answer(
+            "❌ Пока нет доступных персонажей. Свяжитесь с администратором.",
+            reply_markup=back_to_main_menu()
+        )
         return await c.answer()
+    
+    # Отправляем фотки персонажей
     for idx, frame in enumerate(frames):
         await c.message.answer_photo(
             FSInputFile(frame),
-            caption=f"Кадр #{idx+1}"
+            caption=f"👤 Персонаж #{idx+1}"
         )
+    
     await c.message.answer(
-        "Выбери номер стартового кадра:",
-        reply_markup=frame_choice_menu(len(frames))
+        "Выбери персонажа, который будет в твоей рекламе:",
+        reply_markup=character_choice_menu(len(frames))
     )
     await c.answer()
 
-# --- Обработка выбора стартового кадра ---
-@dp.callback_query(F.data.startswith("frame_pick:"))
-async def pick_frame_choice(c: CallbackQuery):
-    idx = int(c.data.split(":",1)[1])
+@dp.callback_query(F.data.startswith("char_pick:"))
+async def character_picked(c: CallbackQuery, state: FSMContext):
+    idx = int(c.data.split(":", 1)[1])
     frames = list_start_frames()[:5]
+    
     if idx < 0 or idx >= len(frames):
-        await c.message.answer("Некорректный выбор кадра.")
+        await c.message.answer("❌ Некорректный выбор персонажа.")
         return await c.answer()
-    set_selected_frame(c.from_user.id, frames[idx])
-    print(f"User {c.from_user.id} выбрал кадр {frames[idx]}")
-    await c.message.answer(f"Выбран стартовый кадр #{idx+1}.", reply_markup=main_menu())
-    await c.answer()
-
-# --- Редактирование кадра ---
-@dp.callback_query(F.data == "edit_frame")
-async def ask_edit(c: CallbackQuery, state: FSMContext):
-    if not get_selected_frame(c.from_user.id):
-        await c.message.answer("Сначала выбери стартовый кадр.")
-        return await c.answer()
-    await state.set_state(FrameEdit.waiting_prompt)
-    await c.message.answer("Напиши промт для редактирования кадра (например: «добавь логотип в углу, фон — супермаркет»).")
-    await c.answer()
-
-@dp.message(FrameEdit.waiting_prompt)
-async def do_edit(m: Message, state: FSMContext):
-    try:
-        src = get_selected_frame(m.from_user.id)
-        await m.answer("Редактирую кадр…")
-        edited_path = await edit_image(src, m.text)
-        set_selected_frame(m.from_user.id, edited_path)
-        await m.answer_photo(FSInputFile(edited_path), caption="Новая версия кадра сохранена.")
-    except Exception as e:
-        await m.answer(f"Не удалось отредактировать: {e}")
-    finally:
-        await state.clear()
-
-# --- Генерация аудио (TTS) ---
-@dp.callback_query(F.data == "gen_audio")
-async def ask_audio_text(c: CallbackQuery, state: FSMContext):
-    samples = list_voice_samples()[:5]
-    if not samples:
-        await c.message.answer("Пока нет доступных голосов. Свяжитесь с администратором.")
-        return await c.answer()
-    # Отправляем по одному аудио с подписью
-    for idx, (name, voice_id, path) in enumerate(samples):
-        await c.message.answer_audio(
-            FSInputFile(path),
-            caption=f"Голос #{idx+1}: {name}"
-        )
+    
+    # Сохраняем выбор персонажа
+    set_selected_character(c.from_user.id, idx)
+    print(f"User {c.from_user.id} выбрал персонажа #{idx+1}")
+    
+    # Переходим к следующему шагу - запрашиваем текст
     await c.message.answer(
-        "Выбери номер голоса:",
-        reply_markup=voice_choice_menu(len(samples))
+        f"✅ Отлично! Ты выбрал персонажа #{idx+1}\n\n"
+        "📝 Теперь напиши текст, который должен сказать этот персонаж.\n\n"
+        "Например: 'Привет! Попробуй наш новый продукт со скидкой 20%!'",
+        reply_markup=back_to_main_menu()
     )
+    
+    await state.set_state(UGCCreation.waiting_character_text)
     await c.answer()
 
-@dp.callback_query(F.data.startswith("voice_pick:"))
-async def set_voice(c: CallbackQuery, state: FSMContext):
-    idx = int(c.data.split(":",1)[1])
-    samples = list_voice_samples()[:5]
-    if idx < 0 or idx >= len(samples):
-        await c.message.answer("Некорректный выбор голоса.")
-        return await c.answer()
-    name, voice_id, _ = samples[idx]
-    set_selected_voice(c.from_user.id, voice_id)
-    await c.message.answer(f"Голос выбран: {name}. Теперь пришли текст для озвучки (до 1000 символов).")
-    await state.set_state(AudioGen.waiting_text)
-    await c.answer()
+@dp.message(UGCCreation.waiting_character_text)
+async def character_text_received(m: Message, state: FSMContext):
+    # Сохраняем текст
+    set_character_text(m.from_user.id, m.text)
+    print(f"User {m.from_user.id} ввел текст персонажа: {m.text[:50]}...")
+    
+    # Переходим к запросу описания ситуации
+    await m.answer(
+        "✅ Текст сохранен!\n\n"
+        "🎬 Теперь опиши ситуацию для видео (промпт).\n\n"
+        "Например: 'Персонаж стоит на фоне магазина, улыбается и машет рукой, яркое освещение'\n\n"
+        "Это описание будет использовано для генерации видео.",
+        reply_markup=back_to_main_menu()
+    )
+    
+    await state.set_state(UGCCreation.waiting_situation_prompt)
 
-@dp.message(AudioGen.waiting_text)
-async def do_audio(m: Message, state: FSMContext):
+@dp.message(UGCCreation.waiting_situation_prompt)
+async def situation_prompt_received(m: Message, state: FSMContext):
+    # Сохраняем промпт
+    set_situation_prompt(m.from_user.id, m.text)
+    print(f"User {m.from_user.id} ввел промпт: {m.text[:50]}...")
+    
+    # Списываем кредит
+    ok = spend_credits(m.from_user.id, 1, "ugc_video_creation")
+    if not ok:
+        await m.answer(
+            "❌ Недостаточно кредитов (нужен 1 кредит).\n\n"
+            "Свяжись с администратором для пополнения.",
+            reply_markup=main_menu()
+        )
+        await state.clear()
+        return
+    
     try:
-        voice_id = get_selected_voice(m.from_user.id)
-        await m.answer("Генерирую аудио…")
-        path = await tts_to_file(m.text, voice_id)
-        set_last_audio(m.from_user.id, path)
-        await m.answer_audio(FSInputFile(path), caption="Готово. Аудио сохранено.")
+        await m.answer("⏳ Начинаю создание UGC рекламы...\n\nЭто займет несколько минут.")
         
-        # Clean up audio file after sending
-        import os
-        try:
-            os.remove(path)
-            print(f"Cleaned up audio file: {path}")
-        except Exception as cleanup_error:
-            print(f"Failed to cleanup audio file {path}: {cleanup_error}")
+        # Получаем сохраненные данные
+        character_idx = get_selected_character(m.from_user.id)
+        character_text = get_character_text(m.from_user.id)
+        situation_prompt = get_situation_prompt(m.from_user.id)
+        
+        frames = list_start_frames()[:5]
+        selected_frame = frames[character_idx] if character_idx is not None and character_idx < len(frames) else None
+        
+        if not selected_frame:
+            raise Exception("Не удалось найти выбранный кадр")
+        
+        # 1. Генерируем аудио с текстом персонажа
+        await m.answer("🎤 Шаг 1/3: Создаю голос персонажа...")
+        
+        # Используем первый доступный голос
+        samples = list_voice_samples()
+        if not samples:
+            raise Exception("Нет доступных голосов")
+        
+        voice_id = samples[0][1]  # Берем первый голос
+        audio_path = await tts_to_file(character_text, voice_id)
+        
+        # 2. Генерируем видео с помощью Veo3
+        await m.answer("🎬 Шаг 2/3: Генерирую видео... (это может занять 2-3 минуты)")
+        
+        # Комбинируем промпт: описание ситуации + что говорит персонаж
+        full_prompt = f"{situation_prompt}. Персонаж говорит: '{character_text}'"
+        
+        video_path = await generate_video_veo3(
+            prompt=full_prompt,
+            duration_seconds=6,  # Стандартная длительность
+            aspect_ratio="9:16"
+        )
+        
+        if video_path:
+            await m.answer("✅ Шаг 3/3: Отправляю готовое видео...")
+            await m.answer_video(
+                FSInputFile(video_path), 
+                caption="🎉 Твоя UGC реклама готова!\n\n(-1 кредит списан)"
+            )
+            
+            # Очистка временных файлов
+            try:
+                os.remove(audio_path)
+                os.remove(video_path)
+                print(f"Cleaned up files: {audio_path}, {video_path}")
+            except Exception as cleanup_error:
+                print(f"Failed to cleanup files: {cleanup_error}")
+        else:
+            raise Exception("Не удалось сгенерировать видео")
+            
+        await m.answer(
+            "Хочешь создать еще одну рекламу?",
+            reply_markup=main_menu()
+        )
+        
     except Exception as e:
-        print(f"TTS Error for user {m.from_user.id}: {e}")  # Логируем для дебага
-        await m.answer("Что-то пошло не так при генерации аудио. Мы уже чиним проблему, попробуй позже.")
+        # Возвращаем кредит при ошибке
+        from tg_bot.utils.credits import add_credits
+        add_credits(m.from_user.id, 1, "refund_ugc_fail")
+        print(f"UGC Creation Error for user {m.from_user.id}: {e}")
+        await m.answer(
+            "❌ Что-то пошло не так при создании рекламы.\n\n"
+            "Кредит возвращен. Попробуй позже или свяжись с поддержкой.",
+            reply_markup=main_menu()
+        )
     finally:
         await state.clear()
 
-# --- Генерация видео с помощью Veo3 (-1 кредит) ---
-@dp.callback_query(F.data == "video_duration")
-async def ask_video_duration(c: CallbackQuery):
-    from tg_bot.keyboards import video_duration_menu
-    await c.message.edit_text(
-        "🎬 Выбери продолжительность видео:",
-        reply_markup=video_duration_menu()
-    )
-    await c.answer()
-
-@dp.callback_query(F.data.startswith("video_dur_"))
-async def ask_video_prompt(c: CallbackQuery, state: FSMContext):
-    duration = int(c.data.split("_")[-1])  # Извлекаем 4, 6 или 8
-    await state.update_data(video_duration=duration)
-    
-    duration_text = {
-        4: "4 секунды (быстро)",
-        6: "6 секунд (средне)", 
-        8: "8 секунд (длинно)"
-    }
-    
-    await state.set_state(VideoGen.waiting_prompt)
-    await c.message.edit_text(
-        f"🎬 Отлично! Продолжительность: {duration_text[duration]}\n\n"
-        "Теперь напиши промт для видео.\n\n"
-        "Например: 'Девушка танцует на пляже, закат, красивые движения'\n\n"
-        "Видео будет в формате 9:16 (вертикальное)."
-    )
-    await c.answer()
-
+# --- Navigation ---
 @dp.callback_query(F.data == "back_to_main")
 async def back_to_main(c: CallbackQuery, state: FSMContext):
-    from tg_bot.keyboards import main_menu
     await c.message.edit_text(
         "🤖 Главное меню:",
         reply_markup=main_menu()
@@ -222,49 +308,16 @@ async def back_to_main(c: CallbackQuery, state: FSMContext):
     await state.clear()
     await c.answer()
 
-@dp.message(VideoGen.waiting_prompt)
-async def do_video(m: Message, state: FSMContext):
-    # Списываем кредит заранее (fail-fast)
-    ok = spend_credits(m.from_user.id, 1, "veo3_video")
-    if not ok:
-        await m.answer("Недостаточно кредитов (нужен 1). Пополни у админа.")
-        return await state.clear()
-
-    try:
-        # Получаем выбранную длительность
-        data = await state.get_data()
-        duration = data.get("video_duration", 6)  # По умолчанию 6 секунд
-        
-        await m.answer(f"Генерирую видео с помощью Veo3 ({duration} сек)… это может занять 2-3 минуты.")
-        
-        # Генерируем видео через Vertex AI Veo3
-        video_path = await generate_video_veo3(
-            prompt=m.text.strip(),
-            duration_seconds=duration,
-            aspect_ratio="9:16"
-        )
-        
-        if video_path:
-            await m.answer_video(FSInputFile(video_path), caption="Готово! (-1 кредит списан)")
-            
-            # Clean up video file after sending
-            import os
-            try:
-                os.remove(video_path)
-                print(f"Cleaned up video file: {video_path}")
-            except Exception as cleanup_error:
-                print(f"Failed to cleanup video file {video_path}: {cleanup_error}")
-        else:
-            raise Exception("Video generation failed")
-            
-    except Exception as e:
-        # Возвращаем кредит при фейле
-        from tg_bot.utils.credits import add_credits
-        add_credits(m.from_user.id, 1, "refund_video_fail")
-        print(f"Veo3 Error for user {m.from_user.id}: {e}")  # Логируем для дебага
-        await m.answer("Что-то пошло не так при генерации видео. Мы уже чиним проблему, попробуй позже.")
-    finally:
-        await state.clear()
+@dp.callback_query(F.data == "back_to_ugc")
+async def back_to_ugc(c: CallbackQuery, state: FSMContext):
+    await c.message.edit_text(
+        "🎬 <b>Создание UGC рекламы</b>\n\n"
+        "Выбери один из вариантов:",
+        parse_mode="HTML",
+        reply_markup=ugc_start_menu()
+    )
+    await state.clear()
+    await c.answer()
 
 async def main():
     # Detect if running in Railway/production (has PORT env var) or locally

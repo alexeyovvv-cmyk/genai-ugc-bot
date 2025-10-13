@@ -13,3 +13,8 @@ class FrameEdit(StatesGroup):
 class VideoGen(StatesGroup):
     waiting_script = State()   # текст для озвучки/промт
     waiting_prompt = State()   # промт для видео после выбора длительности
+
+class UGCCreation(StatesGroup):
+    """Состояния для создания UGC рекламы"""
+    waiting_character_text = State()  # ждем текст, что должен сказать персонаж
+    waiting_situation_prompt = State()  # ждем описание ситуации (промпт для видео)

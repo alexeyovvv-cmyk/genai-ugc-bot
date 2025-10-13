@@ -9,14 +9,26 @@ def frame_choice_menu(count: int):
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 def main_menu():
+    """Главное меню с двумя основными опциями"""
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💡 Сгенерировать видео-хук", callback_data="hooks")],
-        [InlineKeyboardButton(text="🖼️ Выбрать стартовый кадр", callback_data="pick_frame")],
-        [InlineKeyboardButton(text="✏️ Редактировать кадр (пока не доступно)", callback_data="edit_frame")],
-        [InlineKeyboardButton(text="🎤 Сгенерировать аудио", callback_data="gen_audio")],
-        [InlineKeyboardButton(text="🎬 Сгенерировать видео", callback_data="video_duration")],
+        [InlineKeyboardButton(text="🎬 Создать UGC рекламу", callback_data="create_ugc")],
+        [InlineKeyboardButton(text="❓ Как пользоваться (FAQ)", callback_data="faq")],
         [InlineKeyboardButton(text="💰 Кредиты", callback_data="credits")],
     ])
+
+def ugc_start_menu():
+    """Меню выбора персонажа"""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="👤 Выбрать персонажа", callback_data="select_character")],
+        [InlineKeyboardButton(text="✨ Создать персонажа", callback_data="create_character")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")],
+    ])
+
+def character_choice_menu(count: int):
+    """Меню выбора конкретного персонажа из предзагруженных"""
+    buttons = [[InlineKeyboardButton(text=f"Персонаж #{i+1}", callback_data=f"char_pick:{i}")] for i in range(count)]
+    buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_ugc")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 def video_duration_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -39,3 +51,9 @@ def voice_choice_menu(count: int):
             [InlineKeyboardButton(text=str(i+1), callback_data=f"voice_pick:{i}")] for i in range(count)
         ]
     )
+
+def back_to_main_menu():
+    """Кнопка возврата в главное меню"""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⬅️ Вернуться в главное меню", callback_data="back_to_main")]
+    ])
