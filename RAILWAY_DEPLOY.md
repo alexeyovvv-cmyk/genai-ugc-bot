@@ -14,8 +14,8 @@ This guide will help you deploy your Telegram bot to Railway for 24/7 operation 
 ## 💰 Cost Breakdown
 
 - **Railway Hobby Plan**: $5/month (500 hours = 24/7 coverage)
-- **PostgreSQL Plugin**: $5/month
-- **Total**: ~$10/month
+- **PostgreSQL Database**: FREE up to 512MB
+- **Total**: ~$5/month (PostgreSQL free tier sufficient for most bots)
 
 ## 🛠️ Step-by-Step Deployment
 
@@ -43,7 +43,13 @@ Ensure these files are in your repository root:
 3. Railway will automatically set `DATABASE_URL` environment variable
 4. Wait for database to be ready (green status)
 
-### 4. Configure Environment Variables
+### 4. Generate Public Domain
+
+1. Go to your service → Settings → Networking
+2. Click "Generate Domain" 
+3. Copy the domain (e.g., `my-bot.up.railway.app`)
+
+### 5. Configure Environment Variables
 
 In Railway project → Variables tab, add:
 
@@ -53,24 +59,34 @@ OPENAI_API_KEY=your_openai_api_key
 ELEVEN_API_KEY=your_elevenlabs_api_key
 REPLICATE_API_TOKEN=your_replicate_api_token
 BASE_DIR=/app
+RAILWAY_PUBLIC_DOMAIN=my-bot.up.railway.app
 ```
 
-**Note**: `DATABASE_URL` is automatically set by Railway PostgreSQL plugin.
+**Important**: 
+- `RAILWAY_PUBLIC_DOMAIN` should be WITHOUT `https://`, just the domain
+- `DATABASE_URL` is automatically set by Railway PostgreSQL
 
-### 5. Deploy
+### 6. Deploy
 
 1. Railway will automatically deploy when you push to main branch
 2. Or manually trigger deployment in Railway dashboard
 3. Check logs for successful startup
 
-### 6. Verify Deployment
+### 7. Verify Deployment
 
-1. Check Railway logs for "Bot started successfully"
+1. Check Railway logs for:
+   - "Setting webhook to: https://your-domain.up.railway.app/webhook"
+   - "Webhook set successfully!"
+   - "Starting webhook server on port 8080"
 2. Test bot in Telegram:
    - Send `/start`
    - Try generating audio
    - Try generating video
 3. Check database: User data should persist between restarts
+4. Verify webhook:
+   ```bash
+   curl https://api.telegram.org/bot<YOUR_TOKEN>/getWebhookInfo
+   ```
 
 ## 🔧 Configuration Details
 
@@ -87,7 +103,8 @@ BASE_DIR=/app
 ### Monitoring
 - **Logs**: Available in Railway dashboard
 - **Restarts**: Automatic on crashes
-- **Health**: Bot uses polling (no webhook needed)
+- **Health**: Bot uses webhooks on Railway (polling locally)
+- **Health Check**: Available at `https://your-domain.up.railway.app/health`
 
 ## 🚨 Troubleshooting
 
@@ -105,8 +122,11 @@ BASE_DIR=/app
 
 **Bot Not Responding**
 - Check `TELEGRAM_BOT_TOKEN` is correct
-- Verify bot is not already running elsewhere
+- Verify `RAILWAY_PUBLIC_DOMAIN` is set correctly (without https://)
+- Check webhook status: `curl https://api.telegram.org/bot<TOKEN>/getWebhookInfo`
+- Verify bot is not already running elsewhere with polling
 - Check Railway logs for connection errors
+- Ensure public domain is generated in Railway settings
 
 **API Errors**
 - Verify all API keys are set correctly
@@ -161,4 +181,8 @@ BASE_DIR=/app
 
 ---
 
-**Total Cost**: ~$10/month for 24/7 operation with PostgreSQL database and automatic file cleanup.
+**Total Cost**: ~$5/month for 24/7 operation with PostgreSQL database (free tier) and automatic file cleanup.
+
+## 📝 Quick Setup Summary
+
+See [RAILWAY_SETUP.md](./RAILWAY_SETUP.md) for a quick step-by-step guide!

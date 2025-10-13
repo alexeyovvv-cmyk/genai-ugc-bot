@@ -267,15 +267,23 @@ async def do_video(m: Message, state: FSMContext):
         await state.clear()
 
 async def main():
-    # Detect if running in Cloud Run (has PORT env var) or locally
-    if os.getenv("PORT"):
-        # Cloud Run mode: use webhook
+    # Detect if running in Railway/production (has PORT env var) or locally
+    port = os.getenv("PORT")
+    railway_public_domain = os.getenv("RAILWAY_PUBLIC_DOMAIN")
+    
+    if port and railway_public_domain:
+        # Railway/Production mode: use webhook
         from aiohttp import web
         
-        # Set webhook
-        webhook_url = os.getenv("WEBHOOK_URL")
-        if webhook_url:
-            await bot.set_webhook(webhook_url)
+        # Construct webhook URL from Railway public domain
+        webhook_url = f"https://{railway_public_domain}/webhook"
+        print(f"Setting webhook to: {webhook_url}")
+        
+        try:
+            await bot.set_webhook(webhook_url, drop_pending_updates=True)
+            print("Webhook set successfully!")
+        except Exception as e:
+            print(f"Failed to set webhook: {e}")
         
         # Create aiohttp app
         app = web.Application()
@@ -293,17 +301,18 @@ async def main():
         setup_application(app, dp, bot=bot)
         
         # Run web server
-        port = int(os.getenv("PORT", 8080))
+        port_num = int(port)
         runner = web.AppRunner(app)
         await runner.setup()
-        site = web.TCPSite(runner, host="0.0.0.0", port=port)
-        print(f"Starting webhook server on port {port}")
+        site = web.TCPSite(runner, host="0.0.0.0", port=port_num)
+        print(f"Starting webhook server on port {port_num}")
         await site.start()
         
         # Keep running
         await asyncio.Event().wait()
     else:
         # Local mode: use polling
+        print("Starting in polling mode (local development)")
         await dp.start_polling(bot)
 
 if __name__ == "__main__":
