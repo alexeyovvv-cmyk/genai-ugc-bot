@@ -73,6 +73,25 @@ async def on_startup():
         Base.metadata.create_all(bind=engine)
         print("✅ Database tables created/verified successfully")
         
+        # Run migration to add new columns if they don't exist
+        print("🔄 Running migrations for new columns...")
+        from sqlalchemy import text
+        with engine.connect() as conn:
+            try:
+                # Try to add new columns (will be skipped if already exist)
+                migration_sql = """
+                ALTER TABLE user_state 
+                ADD COLUMN IF NOT EXISTS selected_character_idx INTEGER,
+                ADD COLUMN IF NOT EXISTS character_text VARCHAR,
+                ADD COLUMN IF NOT EXISTS situation_prompt VARCHAR;
+                """
+                conn.execute(text(migration_sql))
+                conn.commit()
+                print("✅ Migrations completed successfully")
+            except Exception as migration_error:
+                print(f"⚠️  Migration warning: {migration_error}")
+                # Continue anyway - tables might already be up to date
+        
         # Show table names
         from sqlalchemy import inspect
         inspector = inspect(engine)
