@@ -6,9 +6,11 @@ import re
 
 load_dotenv()
 
-client = OpenAI()
-
 MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+
+def _get_client():
+    """Lazy initialization of OpenAI client."""
+    return OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 PROMPT_TMPL = """Ты — копирайтер перформанс-рекламы.
 На вход: описание продукта и текущей акции: «{description}».
@@ -34,6 +36,7 @@ def _parse_numbered_list(text: str, expected_n: int) -> list[str]:
     return hooks[:expected_n]
 
 async def generate_hooks(description: str, n: int = 4) -> list[str]:
+    client = _get_client()
     prompt = PROMPT_TMPL.format(description=description, n=n)
     resp = client.responses.create(
         model=MODEL,

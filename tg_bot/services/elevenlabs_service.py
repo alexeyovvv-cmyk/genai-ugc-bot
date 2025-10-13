@@ -17,6 +17,8 @@ DEFAULT_VOICES = [
 
 
 def _synth_sync(text: str, voice_id: str, outfile: str) -> str:
+    if not API_KEY:
+        raise ValueError("ELEVEN_API_KEY or ELEVENLABS_API_KEY not set in environment")
     client = ElevenLabs(api_key=API_KEY)
     audio: Iterable[bytes] = client.text_to_speech.convert(
         text=text,
