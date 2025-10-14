@@ -13,11 +13,16 @@ from tg_bot.keyboards import (
     main_menu, 
     ugc_start_menu, 
     character_choice_menu, 
-    back_to_main_menu
+    back_to_main_menu,
+    voice_choice_menu
 )
 from tg_bot.states import UGCCreation
-from tg_bot.services.vertex_service import generate_video_veo3
+from tg_bot.services.lipsync_service import generate_lipsync_video
+# from tg_bot.services.vertex_service import generate_video_veo3  # Временно отключено
+from tg_bot.services.elevenlabs_service import tts_to_file
 from tg_bot.utils.files import list_start_frames
+from tg_bot.utils.voices import list_voice_samples
+from tg_bot.utils.audio import check_audio_duration_limit
 from tg_bot.utils.user_state import (
     set_selected_character,
     get_selected_character,
@@ -25,6 +30,10 @@ from tg_bot.utils.user_state import (
     get_character_text,
     set_situation_prompt,
     get_situation_prompt,
+    set_selected_voice,
+    get_selected_voice,
+    set_last_audio,
+    get_last_audio,
 )
 
 load_dotenv()
@@ -196,11 +205,53 @@ async def character_picked(c: CallbackQuery, state: FSMContext):
     set_selected_character(c.from_user.id, idx)
     print(f"User {c.from_user.id} выбрал персонажа #{idx+1}")
     
-    # Переходим к следующему шагу - запрашиваем текст
+    # Переходим к выбору голоса
+    voices = list_voice_samples()
+    
+    if not voices:
+        await c.message.answer(
+            "❌ Нет доступных голосов. Свяжитесь с администратором.",
+            reply_markup=back_to_main_menu()
+        )
+        return await c.answer()
+    
+    # Отправляем сэмплы голосов
+    for idx_voice, (name, voice_id, sample_path) in enumerate(voices):
+        await c.message.answer_audio(
+            FSInputFile(sample_path),
+            caption=f"🎤 Голос #{idx_voice+1}: {name}"
+        )
+    
     await c.message.answer(
         f"✅ Отлично! Ты выбрал персонажа #{idx+1}\n\n"
-        "📝 Теперь напиши текст, который должен сказать этот персонаж.\n\n"
+        "🎤 Теперь выбери голос для озвучки:",
+        reply_markup=voice_choice_menu(len(voices))
+    )
+    
+    await state.set_state(UGCCreation.waiting_voice_selection)
+    await c.answer()
+
+@dp.callback_query(F.data.startswith("voice_pick:"))
+async def voice_picked(c: CallbackQuery, state: FSMContext):
+    idx = int(c.data.split(":", 1)[1])
+    voices = list_voice_samples()
+    
+    if idx < 0 or idx >= len(voices):
+        await c.message.answer("❌ Некорректный выбор голоса.")
+        return await c.answer()
+    
+    # Сохраняем выбор голоса
+    name, voice_id, sample_path = voices[idx]
+    set_selected_voice(c.from_user.id, voice_id)
+    print(f"User {c.from_user.id} выбрал голос: {name} ({voice_id})")
+    
+    # Переходим к запросу текста
+    await c.message.answer(
+        f"✅ Отлично! Выбран голос: {name}\n\n"
+        "📝 Теперь напиши текст, который должен сказать персонаж.\n\n"
+        "⚠️ <b>Важно:</b> Текст должен быть таким, чтобы озвучка заняла не более 15 секунд!\n\n"
         "Например: 'Привет! Попробуй наш новый продукт со скидкой 20%!'",
+        parse_mode="HTML",
         reply_markup=back_to_main_menu()
     )
     
@@ -213,16 +264,82 @@ async def character_text_received(m: Message, state: FSMContext):
     set_character_text(m.from_user.id, m.text)
     print(f"User {m.from_user.id} ввел текст персонажа: {m.text[:50]}...")
     
-    # Переходим к запросу описания ситуации
-    await m.answer(
-        "✅ Текст сохранен!\n\n"
-        "🎬 Теперь опиши ситуацию для видео (промпт).\n\n"
-        "Например: 'Персонаж стоит на фоне магазина, улыбается и машет рукой, яркое освещение'\n\n"
-        "Это описание будет использовано для генерации видео.",
-        reply_markup=back_to_main_menu()
-    )
+    # Получаем выбранный голос
+    voice_id = get_selected_voice(m.from_user.id)
     
-    await state.set_state(UGCCreation.waiting_situation_prompt)
+    if not voice_id:
+        await m.answer(
+            "❌ Голос не выбран. Попробуй начать сначала.",
+            reply_markup=main_menu()
+        )
+        await state.clear()
+        return
+    
+    try:
+        # Генерируем аудио
+        await m.answer("🎤 Генерирую озвучку...")
+        print(f"[UGC] Генерация TTS для пользователя {m.from_user.id}, voice_id={voice_id}")
+        
+        audio_path = await tts_to_file(m.text, voice_id)
+        
+        if not audio_path:
+            raise Exception("Не удалось сгенерировать аудио")
+        
+        print(f"[UGC] Аудио сгенерировано: {audio_path}")
+        
+        # Сохраняем путь к аудио
+        set_last_audio(m.from_user.id, audio_path)
+        
+        # Проверяем длительность
+        is_valid, duration = check_audio_duration_limit(audio_path, max_seconds=15.0)
+        
+        print(f"[UGC] Длительность аудио: {duration:.2f} сек, валидно: {is_valid}")
+        
+        if not is_valid:
+            await m.answer(
+                f"❌ <b>Аудио слишком длинное!</b>\n\n"
+                f"Длительность твоей озвучки: <b>{duration:.1f} секунд</b>\n"
+                f"Максимум: <b>15 секунд</b>\n\n"
+                f"Пожалуйста, сократи текст и попробуй снова.",
+                parse_mode="HTML",
+                reply_markup=back_to_main_menu()
+            )
+            # Очистка аудио
+            try:
+                if os.path.exists(audio_path):
+                    os.remove(audio_path)
+            except:
+                pass
+            return
+        
+        # Отправляем сгенерированное аудио для прослушивания
+        await m.answer_audio(
+            FSInputFile(audio_path),
+            caption=f"🎤 Вот как это будет звучать ({duration:.1f} сек)"
+        )
+        
+        # Переходим к запросу описания ситуации
+        await m.answer(
+            "✅ Озвучка готова!\n\n"
+            "🎬 Теперь опиши ситуацию для видео.\n\n"
+            "Например: 'яркий солнечный день, улыбается и машет рукой'\n\n"
+            "Это описание поможет сделать видео более живым.",
+            reply_markup=back_to_main_menu()
+        )
+        
+        await state.set_state(UGCCreation.waiting_situation_prompt)
+        
+    except Exception as e:
+        print(f"[UGC] Ошибка при генерации аудио: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        await m.answer(
+            f"❌ Ошибка при генерации озвучки: {str(e)}\n\n"
+            "Попробуй еще раз или свяжись с поддержкой.",
+            reply_markup=main_menu()
+        )
+        await state.clear()
 
 @dp.message(UGCCreation.waiting_situation_prompt)
 async def situation_prompt_received(m: Message, state: FSMContext):
@@ -262,8 +379,10 @@ async def situation_prompt_received(m: Message, state: FSMContext):
         character_idx = get_selected_character(m.from_user.id)
         character_text = get_character_text(m.from_user.id)
         situation_prompt = get_situation_prompt(m.from_user.id)
+        audio_path = get_last_audio(m.from_user.id)
         
         log(f"[UGC] Данные получены: character_idx={character_idx}, text={character_text[:30] if character_text else 'None'}...")
+        log(f"[UGC] Аудио: {audio_path}")
         
         frames = list_start_frames()[:5]
         log(f"[UGC] Найдено {len(frames)} кадров")
@@ -274,24 +393,23 @@ async def situation_prompt_received(m: Message, state: FSMContext):
             log(f"[UGC] ❌ Кадр не найден!")
             raise Exception("Не удалось найти выбранный кадр")
         
+        if not audio_path or not os.path.exists(audio_path):
+            log(f"[UGC] ❌ Аудио не найдено!")
+            raise Exception("Не удалось найти аудио файл")
+        
         log(f"[UGC] Выбран кадр: {selected_frame}")
         
-        # Генерируем видео с помощью Veo3
-        # Передаем стартовый кадр и объединенный промпт (ситуация + что говорит персонаж)
-        await m.answer("🎬 Генерирую видео с персонажем... (это может занять 2-3 минуты)")
-        log(f"[UGC] Начинаем генерацию видео...")
-        
-        # Комбинируем промпт: описание ситуации + что говорит персонаж
-        full_prompt = f"{situation_prompt}. Персонаж говорит: '{character_text}'"
-        log(f"[UGC] Промпт для видео: {full_prompt[:100]}...")
+        # Генерируем видео с помощью Lipsync 2.0
+        # Передаем стартовый кадр персонажа и аудио
+        await m.answer("🎬 Создаю видео с lipsync... (это может занять 2-3 минуты)")
+        log(f"[UGC] Начинаем генерацию lipsync видео...")
         log(f"[UGC] Стартовый кадр: {selected_frame}")
+        log(f"[UGC] Аудио файл: {audio_path}")
         
         try:
-            video_path = await generate_video_veo3(
-                prompt=full_prompt,
-                duration_seconds=6,  # Стандартная длительность
-                aspect_ratio="9:16",
-                image_path=selected_frame  # Передаем стартовый кадр
+            video_path = await generate_lipsync_video(
+                audio_path=audio_path,
+                image_path=selected_frame
             )
             log(f"[UGC] Видео сгенерировано: {video_path}")
         except Exception as video_error:
@@ -314,9 +432,17 @@ async def situation_prompt_received(m: Message, state: FSMContext):
             try:
                 if os.path.exists(video_path):
                     os.remove(video_path)
-                log(f"[UGC] Файл очищен: {video_path}")
+                log(f"[UGC] Видео файл очищен: {video_path}")
             except Exception as cleanup_error:
-                log(f"[UGC] ⚠️ Не удалось очистить файл: {cleanup_error}")
+                log(f"[UGC] ⚠️ Не удалось очистить видео файл: {cleanup_error}")
+            
+            # Очистка аудио файла
+            try:
+                if audio_path and os.path.exists(audio_path):
+                    os.remove(audio_path)
+                    log(f"[UGC] Аудио файл очищен: {audio_path}")
+            except Exception as cleanup_error:
+                log(f"[UGC] ⚠️ Не удалось очистить аудио файл: {cleanup_error}")
         else:
             log(f"[UGC] ❌ Генерация вернула None")
             raise Exception("Не удалось сгенерировать видео. Попробуйте позже.")
