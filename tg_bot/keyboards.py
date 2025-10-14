@@ -9,19 +9,30 @@ def frame_choice_menu(count: int):
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 def main_menu():
-    """Главное меню с двумя основными опциями"""
+    """Главное меню с плитками снизу экрана"""
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🎬 Создать UGC рекламу", callback_data="create_ugc")],
-        [InlineKeyboardButton(text="❓ Как пользоваться (FAQ)", callback_data="faq")],
-        [InlineKeyboardButton(text="💰 Кредиты", callback_data="credits")],
+        # Первый ряд - основные функции
+        [
+            InlineKeyboardButton(text="🎬 UGC реклама", callback_data="create_ugc"),
+            InlineKeyboardButton(text="💰 Кредиты", callback_data="credits")
+        ],
+        # Второй ряд - дополнительная информация
+        [
+            InlineKeyboardButton(text="❓ FAQ", callback_data="faq"),
+            InlineKeyboardButton(text="⚙️ Настройки", callback_data="settings")
+        ]
     ])
 
 def ugc_start_menu():
-    """Меню выбора персонажа"""
+    """Меню выбора персонажа с плитками"""
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="👤 Выбрать персонажа", callback_data="select_character")],
-        [InlineKeyboardButton(text="✨ Создать персонажа", callback_data="create_character")],
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")],
+        # Основные опции в два столбца
+        [
+            InlineKeyboardButton(text="👤 Выбрать персонажа", callback_data="select_character"),
+            InlineKeyboardButton(text="✨ Создать персонажа", callback_data="create_character")
+        ],
+        # Навигация
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")]
     ])
 
 def character_choice_menu(count: int):
@@ -56,4 +67,57 @@ def back_to_main_menu():
     """Кнопка возврата в главное меню"""
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="⬅️ Вернуться в главное меню", callback_data="back_to_main")]
+    ])
+
+def audio_confirmation_menu():
+    """Меню подтверждения аудио после прослушивания"""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🎬 Начать генерацию видео", callback_data="audio_confirmed")],
+        [InlineKeyboardButton(text="🔄 Переделать аудио", callback_data="audio_redo")],
+    ])
+
+def text_change_decision_menu():
+    """Меню выбора: менять текст или нет"""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✏️ Да, изменить текст", callback_data="change_text_yes")],
+        [InlineKeyboardButton(text="🔄 Нет, просто перегенерировать", callback_data="change_text_no")],
+    ])
+
+def settings_menu():
+    """Меню настроек с плитками"""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        # Основные настройки в два столбца
+        [
+            InlineKeyboardButton(text="🎤 Голоса", callback_data="voice_settings"),
+            InlineKeyboardButton(text="📊 Статистика", callback_data="stats")
+        ],
+        [
+            InlineKeyboardButton(text="ℹ️ О боте", callback_data="about"),
+            InlineKeyboardButton(text="🆘 Поддержка", callback_data="support")
+        ],
+        # Навигация
+        [InlineKeyboardButton(text="⬅️ В главное меню", callback_data="back_to_main")]
+    ])
+
+def voice_settings_menu():
+    """Меню настроек голосов"""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="🎵 Прослушать голоса", callback_data="listen_voices"),
+            InlineKeyboardButton(text="⚙️ Настройки TTS", callback_data="tts_settings")
+        ],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="settings")]
+    ])
+
+def bottom_navigation_menu():
+    """Нижнее меню навигации как на картинке"""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="⚙️ Настройки модели", callback_data="model_settings"),
+            InlineKeyboardButton(text="👤 Профиль", callback_data="profile")
+        ],
+        [
+            InlineKeyboardButton(text="🏠 В главное меню", callback_data="back_to_main"),
+            InlineKeyboardButton(text="⬅️ Назад", callback_data="back_previous")
+        ]
     ])

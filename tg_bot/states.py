@@ -18,4 +18,7 @@ class UGCCreation(StatesGroup):
     """Состояния для создания UGC рекламы"""
     waiting_voice_selection = State()  # ждем выбор голоса
     waiting_character_text = State()  # ждем текст, что должен сказать персонаж
+    waiting_audio_confirmation = State()  # ждем подтверждение аудио или переделку
+    waiting_text_change_decision = State()  # ждем решение, менять ли текст
+    waiting_new_character_text = State()  # ждем новый текст для переделки аудио
     waiting_situation_prompt = State()  # ждем описание ситуации (промпт для видео)

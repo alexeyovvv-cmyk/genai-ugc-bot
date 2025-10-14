@@ -14,7 +14,12 @@ from tg_bot.keyboards import (
     ugc_start_menu, 
     character_choice_menu, 
     back_to_main_menu,
-    voice_choice_menu
+    voice_choice_menu,
+    audio_confirmation_menu,
+    text_change_decision_menu,
+    settings_menu,
+    voice_settings_menu,
+    bottom_navigation_menu
 )
 from tg_bot.states import UGCCreation
 from tg_bot.services.falai_service import generate_talking_head_video
@@ -112,7 +117,11 @@ async def on_startup():
 async def cmd_start(m: Message):
     ensure_user(m.from_user.id)
     await m.answer(
-        "Привет! Это GenAI UGC Ads бот.\nУ тебя 100 стартовых кредитов. Что делаем?",
+        "🎬 <b>Добро пожаловать в GenAI UGC Ads!</b>\n\n"
+        "Создавайте профессиональные рекламные видео с помощью ИИ.\n"
+        "У вас есть 100 стартовых кредитов.\n\n"
+        "Выберите действие:",
+        parse_mode="HTML",
         reply_markup=main_menu()
     )
 
@@ -260,6 +269,225 @@ async def voice_picked(c: CallbackQuery, state: FSMContext):
     await state.set_state(UGCCreation.waiting_character_text)
     await c.answer()
 
+@dp.callback_query(F.data == "audio_confirmed")
+async def audio_confirmed(c: CallbackQuery, state: FSMContext):
+    """Пользователь подтвердил аудио, переходим к запросу промпта для видео"""
+    await c.message.answer(
+        "🎬 Отлично! Теперь опиши ситуацию для видео.\n\n"
+        "Например: 'яркий солнечный день, улыбается и машет рукой'\n\n"
+        "Это описание поможет сделать видео более живым.",
+        reply_markup=back_to_main_menu()
+    )
+    await state.set_state(UGCCreation.waiting_situation_prompt)
+    await c.answer()
+
+@dp.callback_query(F.data == "audio_redo")
+async def audio_redo(c: CallbackQuery, state: FSMContext):
+    """Пользователь хочет переделать аудио"""
+    await c.message.answer(
+        "🔄 Хочешь изменить текст или просто перегенерировать аудио с тем же текстом?",
+        reply_markup=text_change_decision_menu()
+    )
+    await state.set_state(UGCCreation.waiting_text_change_decision)
+    await c.answer()
+
+@dp.callback_query(F.data == "change_text_yes")
+async def change_text_yes(c: CallbackQuery, state: FSMContext):
+    """Пользователь хочет изменить текст"""
+    await c.message.answer(
+        "✏️ Отлично! Напиши новый текст для персонажа.\n\n"
+        "⚠️ <b>Важно:</b> Текст должен быть таким, чтобы озвучка заняла не более 15 секунд!",
+        parse_mode="HTML",
+        reply_markup=back_to_main_menu()
+    )
+    await state.set_state(UGCCreation.waiting_new_character_text)
+    await c.answer()
+
+@dp.callback_query(F.data == "change_text_no")
+async def change_text_no(c: CallbackQuery, state: FSMContext):
+    """Пользователь хочет перегенерировать с тем же текстом"""
+    # Получаем сохраненный текст
+    character_text = get_character_text(c.from_user.id)
+    
+    if not character_text:
+        await c.message.answer(
+            "❌ Не найден предыдущий текст. Попробуй начать сначала.",
+            reply_markup=main_menu()
+        )
+        await state.clear()
+        return await c.answer()
+    
+    voice_id = get_selected_voice(c.from_user.id)
+    
+    if not voice_id:
+        await c.message.answer(
+            "❌ Голос не выбран. Попробуй начать сначала.",
+            reply_markup=main_menu()
+        )
+        await state.clear()
+        return await c.answer()
+    
+    try:
+        await c.message.answer("🎤 Перегенерирую озвучку с тем же текстом...")
+        print(f"[UGC] Перегенерация TTS для пользователя {c.from_user.id}, voice_id={voice_id}")
+        
+        # Удаляем старое аудио если есть
+        old_audio_path = get_last_audio(c.from_user.id)
+        if old_audio_path and os.path.exists(old_audio_path):
+            try:
+                os.remove(old_audio_path)
+            except:
+                pass
+        
+        audio_path = await tts_to_file(character_text, voice_id)
+        
+        if not audio_path:
+            raise Exception("Не удалось сгенерировать аудио")
+        
+        print(f"[UGC] Аудио перегенерировано: {audio_path}")
+        
+        # Сохраняем путь к новому аудио
+        set_last_audio(c.from_user.id, audio_path)
+        
+        # Проверяем длительность
+        is_valid, duration = check_audio_duration_limit(audio_path, max_seconds=15.0)
+        
+        print(f"[UGC] Длительность аудио: {duration:.2f} сек, валидно: {is_valid}")
+        
+        if not is_valid:
+            await c.message.answer(
+                f"❌ <b>Аудио слишком длинное!</b>\n\n"
+                f"Длительность твоей озвучки: <b>{duration:.1f} секунд</b>\n"
+                f"Максимум: <b>15 секунд</b>\n\n"
+                f"Пожалуйста, сократи текст и попробуй снова.",
+                parse_mode="HTML",
+                reply_markup=back_to_main_menu()
+            )
+            # Очистка аудио
+            try:
+                if os.path.exists(audio_path):
+                    os.remove(audio_path)
+            except:
+                pass
+            await state.clear()
+            return await c.answer()
+        
+        # Отправляем новое аудио
+        await c.message.answer_audio(
+            FSInputFile(audio_path),
+            caption=f"🎤 Новая версия озвучки ({duration:.1f} сек)"
+        )
+        
+        # Снова даем возможность подтвердить или переделать
+        await c.message.answer(
+            "✅ Озвучка готова! Что будем делать?",
+            reply_markup=audio_confirmation_menu()
+        )
+        
+        await state.set_state(UGCCreation.waiting_audio_confirmation)
+        
+    except Exception as e:
+        print(f"[UGC] Ошибка при перегенерации аудио: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        await c.message.answer(
+            f"❌ Ошибка при перегенерации озвучки: {str(e)}\n\n"
+            "Попробуй еще раз или свяжись с поддержкой.",
+            reply_markup=main_menu()
+        )
+        await state.clear()
+    
+    await c.answer()
+
+@dp.message(UGCCreation.waiting_new_character_text)
+async def new_character_text_received(m: Message, state: FSMContext):
+    """Получен новый текст для переделки аудио"""
+    # Сохраняем новый текст
+    set_character_text(m.from_user.id, m.text)
+    print(f"User {m.from_user.id} ввел новый текст персонажа: {m.text[:50]}...")
+    
+    # Получаем выбранный голос
+    voice_id = get_selected_voice(m.from_user.id)
+    
+    if not voice_id:
+        await m.answer(
+            "❌ Голос не выбран. Попробуй начать сначала.",
+            reply_markup=main_menu()
+        )
+        await state.clear()
+        return
+    
+    try:
+        await m.answer("🎤 Генерирую новую озвучку...")
+        print(f"[UGC] Генерация нового TTS для пользователя {m.from_user.id}, voice_id={voice_id}")
+        
+        # Удаляем старое аудио если есть
+        old_audio_path = get_last_audio(m.from_user.id)
+        if old_audio_path and os.path.exists(old_audio_path):
+            try:
+                os.remove(old_audio_path)
+            except:
+                pass
+        
+        audio_path = await tts_to_file(m.text, voice_id)
+        
+        if not audio_path:
+            raise Exception("Не удалось сгенерировать аудио")
+        
+        print(f"[UGC] Новое аудио сгенерировано: {audio_path}")
+        
+        # Сохраняем путь к аудио
+        set_last_audio(m.from_user.id, audio_path)
+        
+        # Проверяем длительность
+        is_valid, duration = check_audio_duration_limit(audio_path, max_seconds=15.0)
+        
+        print(f"[UGC] Длительность аудио: {duration:.2f} сек, валидно: {is_valid}")
+        
+        if not is_valid:
+            await m.answer(
+                f"❌ <b>Аудио слишком длинное!</b>\n\n"
+                f"Длительность твоей озвучки: <b>{duration:.1f} секунд</b>\n"
+                f"Максимум: <b>15 секунд</b>\n\n"
+                f"Пожалуйста, сократи текст и попробуй снова.",
+                parse_mode="HTML",
+                reply_markup=back_to_main_menu()
+            )
+            # Очистка аудио
+            try:
+                if os.path.exists(audio_path):
+                    os.remove(audio_path)
+            except:
+                pass
+            return
+        
+        # Отправляем сгенерированное аудио для прослушивания
+        await m.answer_audio(
+            FSInputFile(audio_path),
+            caption=f"🎤 Вот как это будет звучать ({duration:.1f} сек)"
+        )
+        
+        # Даем возможность подтвердить или переделать аудио
+        await m.answer(
+            "✅ Озвучка готова! Что будем делать?",
+            reply_markup=audio_confirmation_menu()
+        )
+        
+        await state.set_state(UGCCreation.waiting_audio_confirmation)
+        
+    except Exception as e:
+        print(f"[UGC] Ошибка при генерации нового аудио: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        await m.answer(
+            f"❌ Ошибка при генерации озвучки: {str(e)}\n\n"
+            "Попробуй еще раз или свяжись с поддержкой.",
+            reply_markup=main_menu()
+        )
+        await state.clear()
+
 @dp.message(UGCCreation.waiting_character_text)
 async def character_text_received(m: Message, state: FSMContext):
     # Сохраняем текст
@@ -320,16 +548,13 @@ async def character_text_received(m: Message, state: FSMContext):
             caption=f"🎤 Вот как это будет звучать ({duration:.1f} сек)"
         )
         
-        # Переходим к запросу описания ситуации
+        # Даем возможность подтвердить или переделать аудио
         await m.answer(
-            "✅ Озвучка готова!\n\n"
-            "🎬 Теперь опиши ситуацию для видео.\n\n"
-            "Например: 'яркий солнечный день, улыбается и машет рукой'\n\n"
-            "Это описание поможет сделать видео более живым.",
-            reply_markup=back_to_main_menu()
+            "✅ Озвучка готова! Что будем делать?",
+            reply_markup=audio_confirmation_menu()
         )
         
-        await state.set_state(UGCCreation.waiting_situation_prompt)
+        await state.set_state(UGCCreation.waiting_audio_confirmation)
         
     except Exception as e:
         print(f"[UGC] Ошибка при генерации аудио: {e}")
@@ -490,6 +715,149 @@ async def situation_prompt_received(m: Message, state: FSMContext):
     finally:
         await state.clear()
         log(f"[UGC] Состояние очищено для user {m.from_user.id}")
+
+# --- Settings Menu ---
+@dp.callback_query(F.data == "settings")
+async def show_settings(c: CallbackQuery):
+    await c.message.edit_text(
+        "⚙️ <b>Настройки</b>\n\n"
+        "Выберите раздел для настройки:",
+        parse_mode="HTML",
+        reply_markup=settings_menu()
+    )
+    await c.answer()
+
+@dp.callback_query(F.data == "voice_settings")
+async def show_voice_settings(c: CallbackQuery):
+    await c.message.edit_text(
+        "🎤 <b>Настройки голосов</b>\n\n"
+        "Управление голосами для озвучки:",
+        parse_mode="HTML",
+        reply_markup=voice_settings_menu()
+    )
+    await c.answer()
+
+@dp.callback_query(F.data == "listen_voices")
+async def listen_voices(c: CallbackQuery):
+    """Показать доступные голоса для прослушивания"""
+    voices = list_voice_samples()
+    
+    if not voices:
+        await c.message.answer(
+            "❌ Нет доступных голосов. Свяжитесь с администратором.",
+            reply_markup=voice_settings_menu()
+        )
+        return await c.answer()
+    
+    # Отправляем сэмплы голосов
+    for idx, (name, voice_id, sample_path) in enumerate(voices):
+        await c.message.answer_audio(
+            FSInputFile(sample_path),
+            caption=f"🎤 Голос #{idx+1}: {name}"
+        )
+    
+    await c.message.answer(
+        "🎵 Вот все доступные голоса для озвучки:",
+        reply_markup=voice_settings_menu()
+    )
+    await c.answer()
+
+@dp.callback_query(F.data == "stats")
+async def show_stats(c: CallbackQuery):
+    credits = get_credits(c.from_user.id)
+    await c.message.edit_text(
+        f"📊 <b>Ваша статистика</b>\n\n"
+        f"💰 Кредиты: {credits}\n"
+        f"🎬 Создано видео: 0\n"
+        f"📅 Регистрация: недавно\n\n"
+        f"Статистика обновляется в реальном времени.",
+        parse_mode="HTML",
+        reply_markup=settings_menu()
+    )
+    await c.answer()
+
+@dp.callback_query(F.data == "about")
+async def show_about(c: CallbackQuery):
+    await c.message.edit_text(
+        "ℹ️ <b>О боте</b>\n\n"
+        "🤖 <b>GenAI UGC Ads Bot</b>\n\n"
+        "Создавайте профессиональные UGC рекламные видео с помощью ИИ!\n\n"
+        "✨ <b>Возможности:</b>\n"
+        "• Генерация говорящих персонажей\n"
+        "• Синхронизация губ с аудио\n"
+        "• Различные голоса для озвучки\n"
+        "• Профессиональное качество видео\n\n"
+        "🚀 <b>Технологии:</b>\n"
+        "• Google Veo3 для генерации видео\n"
+        "• ElevenLabs для озвучки\n"
+        "• fal.ai для синхронизации губ",
+        parse_mode="HTML",
+        reply_markup=settings_menu()
+    )
+    await c.answer()
+
+@dp.callback_query(F.data == "support")
+async def show_support(c: CallbackQuery):
+    await c.message.edit_text(
+        "🆘 <b>Поддержка</b>\n\n"
+        "Если у вас возникли вопросы или проблемы:\n\n"
+        "📧 <b>Свяжитесь с нами:</b>\n"
+        "• Telegram: @your_support_username\n"
+        "• Email: support@example.com\n\n"
+        "⏰ <b>Время ответа:</b> до 24 часов\n\n"
+        "🔧 <b>Частые проблемы:</b>\n"
+        "• Видео не генерируется → проверьте кредиты\n"
+        "• Плохое качество → попробуйте другой персонаж\n"
+        "• Ошибки → перезапустите процесс",
+        parse_mode="HTML",
+        reply_markup=settings_menu()
+    )
+    await c.answer()
+
+@dp.callback_query(F.data == "model_settings")
+async def show_model_settings(c: CallbackQuery):
+    await c.message.edit_text(
+        "⚙️ <b>Настройки модели</b>\n\n"
+        "🔧 <b>Текущие настройки:</b>\n"
+        "• Модель видео: Google Veo3\n"
+        "• Качество: Высокое\n"
+        "• Формат: 9:16 (вертикальное)\n"
+        "• Длительность: 6 секунд\n\n"
+        "⚡ <b>Производительность:</b>\n"
+        "• Время генерации: 2-3 минуты\n"
+        "• Размер файла: ~5-10 МБ\n\n"
+        "Настройки оптимизированы для лучшего качества.",
+        parse_mode="HTML",
+        reply_markup=bottom_navigation_menu()
+    )
+    await c.answer()
+
+@dp.callback_query(F.data == "profile")
+async def show_profile(c: CallbackQuery):
+    credits = get_credits(c.from_user.id)
+    await c.message.edit_text(
+        f"👤 <b>Ваш профиль</b>\n\n"
+        f"🆔 ID: {c.from_user.id}\n"
+        f"👤 Имя: {c.from_user.first_name or 'Не указано'}\n"
+        f"💰 Кредиты: {credits}\n"
+        f"📅 Статус: Активен\n\n"
+        f"🎬 <b>Активность:</b>\n"
+        f"• Создано видео: 0\n"
+        f"• Последняя активность: сейчас\n\n"
+        f"💡 <b>Совет:</b> Регулярно создавайте контент для лучших результатов!",
+        parse_mode="HTML",
+        reply_markup=bottom_navigation_menu()
+    )
+    await c.answer()
+
+@dp.callback_query(F.data == "back_previous")
+async def back_previous(c: CallbackQuery):
+    """Возврат к предыдущему меню"""
+    await c.message.edit_text(
+        "🤖 Главное меню:",
+        reply_markup=main_menu()
+    )
+    await c.answer()
 
 # --- Navigation ---
 @dp.callback_query(F.data == "back_to_main")
