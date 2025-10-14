@@ -105,9 +105,9 @@ def _sync_generate_video_replicate(prompt: str, duration_seconds: int, aspect_ra
         
         print(f"[VEO3] Using aspect_ratio={replicate_ratio}, duration={replicate_duration}s", flush=True)
         
-        # Try Veo 3 first, fallback to cheaper models
+        # Try Veo 3 Fast first, fallback to cheaper models
         models_to_try = [
-            "google/veo-3",
+            "google/veo-3-fast",
             "stability-ai/stable-video-diffusion:76d4f5af2bfdfc908b13e8f4d02b5d1f38cf7c8caf54e8784feb472a4a995be4",
             "anotherjesse/zeroscope-v2-xl:9f747673945c62801b13b84701c783929c0ee784e4748ec062204894dda1a351"
         ]
