@@ -17,7 +17,8 @@ from tg_bot.keyboards import (
     voice_choice_menu
 )
 from tg_bot.states import UGCCreation
-from tg_bot.services.lipsync_service import generate_lipsync_video
+from tg_bot.services.falai_service import generate_talking_head_video
+# from tg_bot.services.lipsync_service import generate_lipsync_video  # Заменено на falai_service
 # from tg_bot.services.vertex_service import generate_video_veo3  # Временно отключено
 from tg_bot.services.elevenlabs_service import tts_to_file
 from tg_bot.utils.files import list_start_frames
@@ -399,15 +400,15 @@ async def situation_prompt_received(m: Message, state: FSMContext):
         
         log(f"[UGC] Выбран кадр: {selected_frame}")
         
-        # Генерируем видео с помощью Lipsync 2.0
+        # Генерируем видео с помощью fal.ai OmniHuman
         # Передаем стартовый кадр персонажа и аудио
-        await m.answer("🎬 Создаю видео с lipsync... (это может занять 2-3 минуты)")
-        log(f"[UGC] Начинаем генерацию lipsync видео...")
+        await m.answer("🎬 Создаю видео с синхронизацией губ... (это может занять 2-3 минуты)")
+        log(f"[UGC] Начинаем генерацию talking head видео через fal.ai...")
         log(f"[UGC] Стартовый кадр: {selected_frame}")
         log(f"[UGC] Аудио файл: {audio_path}")
         
         try:
-            video_path = await generate_lipsync_video(
+            video_path = await generate_talking_head_video(
                 audio_path=audio_path,
                 image_path=selected_frame
             )
