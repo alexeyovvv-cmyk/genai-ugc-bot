@@ -21,7 +21,7 @@ from tg_bot.services.falai_service import generate_talking_head_video
 # from tg_bot.services.lipsync_service import generate_lipsync_video  # Заменено на falai_service
 # from tg_bot.services.vertex_service import generate_video_veo3  # Временно отключено
 from tg_bot.services.elevenlabs_service import tts_to_file
-from tg_bot.services.prompt_enhancer_service import enhance_audio_prompt, enhance_video_prompt
+from tg_bot.services.prompt_enhancer_service import enhance_video_prompt
 from tg_bot.utils.files import list_start_frames
 from tg_bot.utils.voices import list_voice_samples
 from tg_bot.utils.audio import check_audio_duration_limit
@@ -278,28 +278,11 @@ async def character_text_received(m: Message, state: FSMContext):
         return
     
     try:
-        # Улучшаем промпт пользователя
-        await m.answer("✨ Улучшаю твой промпт...")
-        print(f"[UGC] Улучшение промпта для пользователя {m.from_user.id}")
-        
-        enhanced_text = await enhance_audio_prompt(m.text)
-        
-        # Показываем пользователю улучшенный промпт
-        if enhanced_text != m.text:
-            await m.answer(
-                f"✅ <b>Промпт улучшен!</b>\n\n"
-                f"<b>Твой текст:</b>\n{m.text}\n\n"
-                f"<b>Улучшенный текст:</b>\n{enhanced_text}",
-                parse_mode="HTML"
-            )
-            # Обновляем сохраненный текст на улучшенный
-            set_character_text(m.from_user.id, enhanced_text)
-        
-        # Генерируем аудио с улучшенным текстом
+        # Генерируем аудио напрямую из текста пользователя
         await m.answer("🎤 Генерирую озвучку...")
         print(f"[UGC] Генерация TTS для пользователя {m.from_user.id}, voice_id={voice_id}")
         
-        audio_path = await tts_to_file(enhanced_text, voice_id)
+        audio_path = await tts_to_file(m.text, voice_id)
         
         if not audio_path:
             raise Exception("Не удалось сгенерировать аудио")

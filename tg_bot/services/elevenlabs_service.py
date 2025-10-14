@@ -29,15 +29,13 @@ def _synth_sync(text: str, voice_id: str, outfile: str) -> str:
     
     client = ElevenLabs(api_key=API_KEY)
     
-    sys.stderr.write(f"[TTS] Вызываем text_to_speech.convert с моделью eleven_v3 (поддержка тегов)...\n")
-    sys.stderr.write(f"[TTS] Текст с тегами: {text}\n")
+    sys.stderr.write(f"[TTS] Вызываем text_to_speech.convert...\n")
     sys.stderr.flush()
     
-    # Используем eleven_v3 - модель с улучшенной поддержкой эмоциональных тегов в []
     audio: Iterable[bytes] = client.text_to_speech.convert(
-        text=text,  # Передаем текст с тегами как есть
+        text=text,
         voice_id=voice_id,
-        model_id="eleven_v3",  # Модель v3 с поддержкой тегов!
+        model_id="eleven_multilingual_v2",
         output_format="mp3_44100_128",
     )
     
