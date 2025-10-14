@@ -54,67 +54,91 @@ from tg_bot.utils.user_state import (
 )
 
 # Функции для сохранения параметров персонажа
-def set_character_gender(user_id: int, gender: str):
+def set_character_gender(tg_id: int, gender: str):
     """Сохранить выбранный пол персонажа"""
     from sqlalchemy import text
     with engine.connect() as conn:
+        # Сначала убеждаемся, что запись в user_state существует
+        conn.execute(text("""
+            INSERT INTO user_state (user_id) 
+            SELECT id FROM users WHERE tg_id = :tg_id
+            ON CONFLICT (user_id) DO NOTHING
+        """), {"tg_id": tg_id})
+        
+        # Теперь обновляем
         conn.execute(text("""
             UPDATE user_state 
             SET character_gender = :gender 
-            WHERE tg_id = :user_id
-        """), {"gender": gender, "user_id": user_id})
+            WHERE user_id = (SELECT id FROM users WHERE tg_id = :tg_id)
+        """), {"gender": gender, "tg_id": tg_id})
         conn.commit()
 
-def get_character_gender(user_id: int) -> str:
+def get_character_gender(tg_id: int) -> str:
     """Получить выбранный пол персонажа"""
     from sqlalchemy import text
     with engine.connect() as conn:
         result = conn.execute(text("""
             SELECT character_gender FROM user_state 
-            WHERE tg_id = :user_id
-        """), {"user_id": user_id}).fetchone()
+            WHERE user_id = (SELECT id FROM users WHERE tg_id = :tg_id)
+        """), {"tg_id": tg_id}).fetchone()
         return result[0] if result and result[0] else None
 
-def set_character_age(user_id: int, age: str):
+def set_character_age(tg_id: int, age: str):
     """Сохранить выбранный возраст персонажа"""
     from sqlalchemy import text
     with engine.connect() as conn:
+        # Сначала убеждаемся, что запись в user_state существует
+        conn.execute(text("""
+            INSERT INTO user_state (user_id) 
+            SELECT id FROM users WHERE tg_id = :tg_id
+            ON CONFLICT (user_id) DO NOTHING
+        """), {"tg_id": tg_id})
+        
+        # Теперь обновляем
         conn.execute(text("""
             UPDATE user_state 
             SET character_age = :age 
-            WHERE tg_id = :user_id
-        """), {"age": age, "user_id": user_id})
+            WHERE user_id = (SELECT id FROM users WHERE tg_id = :tg_id)
+        """), {"age": age, "tg_id": tg_id})
         conn.commit()
 
-def get_character_age(user_id: int) -> str:
+def get_character_age(tg_id: int) -> str:
     """Получить выбранный возраст персонажа"""
     from sqlalchemy import text
     with engine.connect() as conn:
         result = conn.execute(text("""
             SELECT character_age FROM user_state 
-            WHERE tg_id = :user_id
-        """), {"user_id": user_id}).fetchone()
+            WHERE user_id = (SELECT id FROM users WHERE tg_id = :tg_id)
+        """), {"tg_id": tg_id}).fetchone()
         return result[0] if result and result[0] else None
 
-def set_character_page(user_id: int, page: int):
+def set_character_page(tg_id: int, page: int):
     """Сохранить текущую страницу персонажей"""
     from sqlalchemy import text
     with engine.connect() as conn:
+        # Сначала убеждаемся, что запись в user_state существует
+        conn.execute(text("""
+            INSERT INTO user_state (user_id) 
+            SELECT id FROM users WHERE tg_id = :tg_id
+            ON CONFLICT (user_id) DO NOTHING
+        """), {"tg_id": tg_id})
+        
+        # Теперь обновляем
         conn.execute(text("""
             UPDATE user_state 
             SET character_page = :page 
-            WHERE tg_id = :user_id
-        """), {"page": page, "user_id": user_id})
+            WHERE user_id = (SELECT id FROM users WHERE tg_id = :tg_id)
+        """), {"page": page, "tg_id": tg_id})
         conn.commit()
 
-def get_character_page(user_id: int) -> int:
+def get_character_page(tg_id: int) -> int:
     """Получить текущую страницу персонажей"""
     from sqlalchemy import text
     with engine.connect() as conn:
         result = conn.execute(text("""
             SELECT character_page FROM user_state 
-            WHERE tg_id = :user_id
-        """), {"user_id": user_id}).fetchone()
+            WHERE user_id = (SELECT id FROM users WHERE tg_id = :tg_id)
+        """), {"tg_id": tg_id}).fetchone()
         return result[0] if result and result[0] is not None else 0
 
 load_dotenv()
