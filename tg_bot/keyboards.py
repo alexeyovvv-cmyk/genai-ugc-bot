@@ -41,6 +41,66 @@ def character_choice_menu(count: int):
     buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_ugc")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
+def gender_selection_menu():
+    """Меню выбора пола персонажа"""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="👨 Мужской", callback_data="gender_male"),
+            InlineKeyboardButton(text="👩 Женский", callback_data="gender_female")
+        ],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_ugc")]
+    ])
+
+def age_selection_menu():
+    """Меню выбора возраста персонажа"""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="🧒 Молодой (18-25)", callback_data="age_young"),
+            InlineKeyboardButton(text="👨 Взрослый (26-50)", callback_data="age_adult")
+        ],
+        [
+            InlineKeyboardButton(text="👴 Пожилой (50+)", callback_data="age_elderly")
+        ],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_gender")]
+    ])
+
+def character_gallery_menu(page: int, has_next: bool, total_count: int):
+    """Меню галереи персонажей с пагинацией"""
+    buttons = []
+    
+    # Кнопки навигации по страницам
+    nav_buttons = []
+    if page > 0:
+        nav_buttons.append(InlineKeyboardButton(text="⬅️ Предыдущая", callback_data=f"char_page:{page-1}"))
+    
+    if has_next:
+        nav_buttons.append(InlineKeyboardButton(text="Следующая ➡️", callback_data=f"char_page:{page+1}"))
+    
+    if nav_buttons:
+        buttons.append(nav_buttons)
+    
+    # Кнопка изменения параметров
+    buttons.append([InlineKeyboardButton(text="🔄 Изменить параметры персонажа", callback_data="change_character_params")])
+    
+    # Кнопка назад
+    buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_age")])
+    
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def character_selection_menu(character_count: int, page: int):
+    """Меню выбора конкретного персонажа с учетом страницы"""
+    buttons = []
+    
+    # Кнопки выбора персонажей (максимум 5 на странице)
+    for i in range(character_count):
+        global_index = page * 5 + i
+        buttons.append([InlineKeyboardButton(text=f"Персонаж #{global_index+1}", callback_data=f"char_pick:{global_index}")])
+    
+    # Кнопка изменения параметров
+    buttons.append([InlineKeyboardButton(text="🔄 Изменить параметры персонажа", callback_data="change_character_params")])
+    
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
 def video_duration_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="⏱️ 4 секунды (быстро)", callback_data="video_dur_4")],
@@ -74,6 +134,7 @@ def audio_confirmation_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🎬 Начать генерацию видео", callback_data="audio_confirmed")],
         [InlineKeyboardButton(text="🔄 Переделать аудио", callback_data="audio_redo")],
+        [InlineKeyboardButton(text="🎤 Выбрать другой голос", callback_data="change_voice")],
     ])
 
 def text_change_decision_menu():
@@ -81,6 +142,7 @@ def text_change_decision_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✏️ Да, изменить текст", callback_data="change_text_yes")],
         [InlineKeyboardButton(text="🔄 Нет, просто перегенерировать", callback_data="change_text_no")],
+        [InlineKeyboardButton(text="🎤 Выбрать другой голос", callback_data="change_voice")],
     ])
 
 def settings_menu():

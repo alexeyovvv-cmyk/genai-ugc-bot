@@ -16,6 +16,9 @@ class VideoGen(StatesGroup):
 
 class UGCCreation(StatesGroup):
     """Состояния для создания UGC рекламы"""
+    waiting_gender_selection = State()  # ждем выбор пола персонажа
+    waiting_age_selection = State()  # ждем выбор возраста персонажа
+    waiting_character_gallery = State()  # ждем выбор персонажа из галереи
     waiting_voice_selection = State()  # ждем выбор голоса
     waiting_character_text = State()  # ждем текст, что должен сказать персонаж
     waiting_audio_confirmation = State()  # ждем подтверждение аудио или переделку

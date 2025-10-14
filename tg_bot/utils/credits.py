@@ -7,25 +7,34 @@ def ensure_user(tg_id: int) -> User:
     """Гарантирует наличие пользователя и стартовые 100 кредитов при первом старте."""
     with SessionLocal() as db:
         u = db.scalar(select(User).where(User.tg_id == tg_id))
-        if u: return u
+        if u: 
+            print(f"[CREDITS] User {tg_id} already exists, credits: {u.credits}", flush=True)
+            return u
         u = User(tg_id=tg_id, credits=100)
         db.add(u); db.commit(); db.refresh(u)
         db.add(CreditLog(user_id=u.id, delta=+100, reason="signup_bonus"))
         db.commit()
+        print(f"[CREDITS] ✅ New user {tg_id} created with 100 credits", flush=True)
         return u
 
 def get_credits(tg_id: int) -> int:
     with SessionLocal() as db:
         u = db.scalar(select(User).where(User.tg_id == tg_id))
-        return u.credits if u else 0
+        credits = u.credits if u else 0
+        print(f"[CREDITS] User {tg_id} has {credits} credits", flush=True)
+        return credits
 
 def add_credits(tg_id: int, amount: int, reason: str):
     with SessionLocal() as db:
         u = db.scalar(select(User).where(User.tg_id == tg_id))
-        if not u: return
+        if not u: 
+            print(f"[CREDITS] ❌ User {tg_id} not found for credit addition", flush=True)
+            return
+        old_credits = u.credits
         u.credits += amount
         db.add(CreditLog(user_id=u.id, delta=amount, reason=reason))
         db.commit()
+        print(f"[CREDITS] ✅ User {tg_id}: +{amount} credits ({old_credits} → {u.credits}) [reason: {reason}]", flush=True)
 
 def spend_credits(tg_id: int, amount: int, reason: str) -> bool:
     """Атомарно списывает amount. Возвращает True при успехе."""
@@ -34,9 +43,15 @@ def spend_credits(tg_id: int, amount: int, reason: str) -> bool:
     # ↑ хитрость не нужна, ниже простой вариант с одной транзакцией:
     with SessionLocal() as db:
         u = db.scalar(select(User).where(User.tg_id == tg_id).with_for_update())
-        if not u or u.credits < amount:
+        if not u:
+            print(f"[CREDITS] ❌ User {tg_id} not found for credit spending", flush=True)
             return False
+        if u.credits < amount:
+            print(f"[CREDITS] ❌ User {tg_id} has insufficient credits: {u.credits} < {amount}", flush=True)
+            return False
+        old_credits = u.credits
         u.credits -= amount
         db.add(CreditLog(user_id=u.id, delta=-amount, reason=reason))
         db.commit()
+        print(f"[CREDITS] ✅ User {tg_id}: -{amount} credits ({old_credits} → {u.credits}) [reason: {reason}]", flush=True)
         return True

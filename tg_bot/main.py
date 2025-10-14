@@ -19,7 +19,11 @@ from tg_bot.keyboards import (
     text_change_decision_menu,
     settings_menu,
     voice_settings_menu,
-    bottom_navigation_menu
+    bottom_navigation_menu,
+    gender_selection_menu,
+    age_selection_menu,
+    character_gallery_menu,
+    character_selection_menu
 )
 from tg_bot.states import UGCCreation
 from tg_bot.services.falai_service import generate_talking_head_video
@@ -27,7 +31,13 @@ from tg_bot.services.falai_service import generate_talking_head_video
 # from tg_bot.services.vertex_service import generate_video_veo3  # Временно отключено
 from tg_bot.services.elevenlabs_service import tts_to_file
 from tg_bot.services.prompt_enhancer_service import enhance_video_prompt
-from tg_bot.utils.files import list_start_frames
+from tg_bot.utils.files import (
+    list_start_frames, 
+    list_character_images, 
+    get_character_image,
+    get_available_genders,
+    get_available_ages
+)
 from tg_bot.utils.voices import list_voice_samples
 from tg_bot.utils.audio import check_audio_duration_limit
 from tg_bot.utils.user_state import (
@@ -42,6 +52,70 @@ from tg_bot.utils.user_state import (
     set_last_audio,
     get_last_audio,
 )
+
+# Функции для сохранения параметров персонажа
+def set_character_gender(user_id: int, gender: str):
+    """Сохранить выбранный пол персонажа"""
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        conn.execute(text("""
+            UPDATE user_state 
+            SET character_gender = :gender 
+            WHERE tg_id = :user_id
+        """), {"gender": gender, "user_id": user_id})
+        conn.commit()
+
+def get_character_gender(user_id: int) -> str:
+    """Получить выбранный пол персонажа"""
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        result = conn.execute(text("""
+            SELECT character_gender FROM user_state 
+            WHERE tg_id = :user_id
+        """), {"user_id": user_id}).fetchone()
+        return result[0] if result and result[0] else None
+
+def set_character_age(user_id: int, age: str):
+    """Сохранить выбранный возраст персонажа"""
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        conn.execute(text("""
+            UPDATE user_state 
+            SET character_age = :age 
+            WHERE tg_id = :user_id
+        """), {"age": age, "user_id": user_id})
+        conn.commit()
+
+def get_character_age(user_id: int) -> str:
+    """Получить выбранный возраст персонажа"""
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        result = conn.execute(text("""
+            SELECT character_age FROM user_state 
+            WHERE tg_id = :user_id
+        """), {"user_id": user_id}).fetchone()
+        return result[0] if result and result[0] else None
+
+def set_character_page(user_id: int, page: int):
+    """Сохранить текущую страницу персонажей"""
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        conn.execute(text("""
+            UPDATE user_state 
+            SET character_page = :page 
+            WHERE tg_id = :user_id
+        """), {"page": page, "user_id": user_id})
+        conn.commit()
+
+def get_character_page(user_id: int) -> int:
+    """Получить текущую страницу персонажей"""
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        result = conn.execute(text("""
+            SELECT character_page FROM user_state 
+            WHERE tg_id = :user_id
+        """), {"user_id": user_id}).fetchone()
+        return result[0] if result and result[0] is not None else 0
 
 load_dotenv()
 
@@ -95,7 +169,10 @@ async def on_startup():
                 ALTER TABLE user_state 
                 ADD COLUMN IF NOT EXISTS selected_character_idx INTEGER,
                 ADD COLUMN IF NOT EXISTS character_text VARCHAR,
-                ADD COLUMN IF NOT EXISTS situation_prompt VARCHAR;
+                ADD COLUMN IF NOT EXISTS situation_prompt VARCHAR,
+                ADD COLUMN IF NOT EXISTS character_gender VARCHAR,
+                ADD COLUMN IF NOT EXISTS character_age VARCHAR,
+                ADD COLUMN IF NOT EXISTS character_page INTEGER DEFAULT 0;
                 """
                 conn.execute(text(migration_sql))
                 conn.commit()
@@ -109,6 +186,26 @@ async def on_startup():
         inspector = inspect(engine)
         tables = inspector.get_table_names()
         print(f"📊 Available tables: {', '.join(tables) if tables else 'none yet'}")
+        
+        # Show database stats
+        from sqlalchemy import select
+        from tg_bot.db import SessionLocal
+        from tg_bot.models import User, CreditLog
+        with SessionLocal() as db:
+            user_count = len(db.execute(select(User)).scalars().all())
+            credit_log_count = len(db.execute(select(CreditLog)).scalars().all())
+            print(f"[STARTUP] 👥 Users in database: {user_count}")
+            print(f"[STARTUP] 📊 Credit operations logged: {credit_log_count}")
+            
+            if user_count > 0:
+                print(f"[STARTUP] ✅ Database has {user_count} existing users - data persisted!")
+                # Show user credits
+                users = db.execute(select(User)).scalars().all()
+                for user in users[:5]:  # Show first 5 users
+                    print(f"[STARTUP]   User {user.tg_id}: {user.credits} credits")
+            else:
+                print(f"[STARTUP] ⚠️  Database is empty - first start or data was lost")
+                
     except Exception as e:
         print(f"❌ Error creating database tables: {e}")
         raise
@@ -127,8 +224,50 @@ async def cmd_start(m: Message):
 
 @dp.callback_query(F.data == "credits")
 async def show_credits(c: CallbackQuery):
+    from sqlalchemy import select
+    from tg_bot.db import SessionLocal
+    from tg_bot.models import User, CreditLog
+    
     cts = get_credits(c.from_user.id)
-    await c.message.answer(f"У тебя сейчас {cts} кредитов.", reply_markup=main_menu())
+    
+    # Получаем последние 5 операций с кредитами
+    with SessionLocal() as db:
+        user = db.scalar(select(User).where(User.tg_id == c.from_user.id))
+        if user:
+            logs = db.execute(
+                select(CreditLog)
+                .where(CreditLog.user_id == user.id)
+                .order_by(CreditLog.created_at.desc())
+                .limit(5)
+            ).scalars().all()
+        else:
+            logs = []
+    
+    # Формируем сообщение с историей
+    history_text = ""
+    if logs:
+        history_text = "\n\n📊 <b>Последние операции:</b>\n"
+        for log in logs:
+            sign = "+" if log.delta > 0 else ""
+            emoji = "📈" if log.delta > 0 else "📉"
+            reason_map = {
+                "signup_bonus": "Бонус при регистрации",
+                "ugc_video_creation": "Генерация UGC видео",
+                "refund_ugc_fail": "Возврат (ошибка)",
+                "admin_add": "Начислено администратором"
+            }
+            reason_text = reason_map.get(log.reason, log.reason)
+            history_text += f"{emoji} {sign}{log.delta} — {reason_text}\n"
+    
+    await c.message.answer(
+        f"💰 <b>Баланс кредитов</b>\n\n"
+        f"У тебя сейчас: <b>{cts} кредитов</b>\n\n"
+        f"💡 <b>Стоимость услуг:</b>\n"
+        f"• Генерация UGC видео: 1 кредит"
+        f"{history_text}",
+        parse_mode="HTML",
+        reply_markup=main_menu()
+    )
     await c.answer()
 
 # --- FAQ ---
@@ -181,40 +320,188 @@ async def create_character(c: CallbackQuery):
     await c.answer()
 
 @dp.callback_query(F.data == "select_character")
-async def select_character(c: CallbackQuery):
-    frames = list_start_frames()[:5]
-    if not frames:
+async def select_character(c: CallbackQuery, state: FSMContext):
+    """Начать процесс выбора персонажа - сначала выбор пола"""
+    await c.message.edit_text(
+        "👤 <b>Выбор персонажа</b>\n\n"
+        "Сначала выбери пол персонажа:",
+        parse_mode="HTML",
+        reply_markup=gender_selection_menu()
+    )
+    await state.set_state(UGCCreation.waiting_gender_selection)
+    await c.answer()
+
+# --- Новые обработчики для выбора персонажа ---
+
+@dp.callback_query(F.data == "gender_male")
+async def gender_male_selected(c: CallbackQuery, state: FSMContext):
+    """Пользователь выбрал мужской пол"""
+    set_character_gender(c.from_user.id, "male")
+    print(f"User {c.from_user.id} выбрал пол: мужской")
+    
+    await c.message.edit_text(
+        "👨 <b>Мужской пол выбран</b>\n\n"
+        "Теперь выбери возраст персонажа:",
+        parse_mode="HTML",
+        reply_markup=age_selection_menu()
+    )
+    await state.set_state(UGCCreation.waiting_age_selection)
+    await c.answer()
+
+@dp.callback_query(F.data == "gender_female")
+async def gender_female_selected(c: CallbackQuery, state: FSMContext):
+    """Пользователь выбрал женский пол"""
+    set_character_gender(c.from_user.id, "female")
+    print(f"User {c.from_user.id} выбрал пол: женский")
+    
+    await c.message.edit_text(
+        "👩 <b>Женский пол выбран</b>\n\n"
+        "Теперь выбери возраст персонажа:",
+        parse_mode="HTML",
+        reply_markup=age_selection_menu()
+    )
+    await state.set_state(UGCCreation.waiting_age_selection)
+    await c.answer()
+
+@dp.callback_query(F.data == "age_young")
+async def age_young_selected(c: CallbackQuery, state: FSMContext):
+    """Пользователь выбрал молодой возраст"""
+    set_character_age(c.from_user.id, "young")
+    set_character_page(c.from_user.id, 0)  # Сбрасываем страницу
+    print(f"User {c.from_user.id} выбрал возраст: молодой")
+    
+    await show_character_gallery(c, state)
+
+@dp.callback_query(F.data == "age_adult")
+async def age_adult_selected(c: CallbackQuery, state: FSMContext):
+    """Пользователь выбрал взрослый возраст"""
+    set_character_age(c.from_user.id, "adult")
+    set_character_page(c.from_user.id, 0)  # Сбрасываем страницу
+    print(f"User {c.from_user.id} выбрал возраст: взрослый")
+    
+    await show_character_gallery(c, state)
+
+@dp.callback_query(F.data == "age_elderly")
+async def age_elderly_selected(c: CallbackQuery, state: FSMContext):
+    """Пользователь выбрал пожилой возраст"""
+    set_character_age(c.from_user.id, "elderly")
+    set_character_page(c.from_user.id, 0)  # Сбрасываем страницу
+    print(f"User {c.from_user.id} выбрал возраст: пожилой")
+    
+    await show_character_gallery(c, state)
+
+async def show_character_gallery(c: CallbackQuery, state: FSMContext):
+    """Показать галерею персонажей"""
+    gender = get_character_gender(c.from_user.id)
+    age = get_character_age(c.from_user.id)
+    page = get_character_page(c.from_user.id)
+    
+    if not gender or not age:
         await c.message.answer(
-            "❌ Пока нет доступных персонажей. Свяжитесь с администратором.",
+            "❌ Ошибка: не выбраны параметры персонажа. Начните сначала.",
             reply_markup=back_to_main_menu()
         )
         return await c.answer()
     
-    # Отправляем фотки персонажей
-    for idx, frame in enumerate(frames):
+    # Получаем изображения для текущей страницы
+    images, has_next = list_character_images(gender, age, page, limit=5)
+    
+    if not images:
+        await c.message.edit_text(
+            f"❌ <b>Нет доступных персонажей</b>\n\n"
+            f"Для выбранных параметров (пол: {gender}, возраст: {age}) "
+            f"персонажи не найдены.\n\n"
+            f"Попробуйте изменить параметры:",
+            parse_mode="HTML",
+            reply_markup=character_gallery_menu(page, has_next, len(images))
+        )
+        return await c.answer()
+    
+    # Отправляем изображения персонажей
+    for idx, image_path in enumerate(images):
+        global_index = page * 5 + idx
         await c.message.answer_photo(
-            FSInputFile(frame),
-            caption=f"👤 Персонаж #{idx+1}"
+            FSInputFile(image_path),
+            caption=f"👤 Персонаж #{global_index+1}"
         )
     
+    # Отправляем меню с навигацией
     await c.message.answer(
-        "Выбери персонажа, который будет в твоей рекламе:",
-        reply_markup=character_choice_menu(len(frames))
+        f"👤 <b>Персонажи ({gender}, {age})</b>\n\n"
+        f"Страница {page + 1}. Выбери персонажа:",
+        parse_mode="HTML",
+        reply_markup=character_gallery_menu(page, has_next, len(images))
     )
+    
+    await state.set_state(UGCCreation.waiting_character_gallery)
+    await c.answer()
+
+@dp.callback_query(F.data.startswith("char_page:"))
+async def character_page_changed(c: CallbackQuery, state: FSMContext):
+    """Пользователь переключил страницу персонажей"""
+    page = int(c.data.split(":", 1)[1])
+    set_character_page(c.from_user.id, page)
+    print(f"User {c.from_user.id} переключил на страницу {page}")
+    
+    await show_character_gallery(c, state)
+
+@dp.callback_query(F.data == "change_character_params")
+async def change_character_params(c: CallbackQuery, state: FSMContext):
+    """Пользователь хочет изменить параметры персонажа"""
+    await c.message.edit_text(
+        "🔄 <b>Изменение параметров персонажа</b>\n\n"
+        "Выбери пол персонажа:",
+        parse_mode="HTML",
+        reply_markup=gender_selection_menu()
+    )
+    await state.set_state(UGCCreation.waiting_gender_selection)
+    await c.answer()
+
+@dp.callback_query(F.data == "back_to_gender")
+async def back_to_gender(c: CallbackQuery, state: FSMContext):
+    """Возврат к выбору пола"""
+    await c.message.edit_text(
+        "👤 <b>Выбор персонажа</b>\n\n"
+        "Выбери пол персонажа:",
+        parse_mode="HTML",
+        reply_markup=gender_selection_menu()
+    )
+    await state.set_state(UGCCreation.waiting_gender_selection)
+    await c.answer()
+
+@dp.callback_query(F.data == "back_to_age")
+async def back_to_age(c: CallbackQuery, state: FSMContext):
+    """Возврат к выбору возраста"""
+    gender = get_character_gender(c.from_user.id)
+    gender_text = "👨 Мужской" if gender == "male" else "👩 Женский"
+    
+    await c.message.edit_text(
+        f"👤 <b>Выбор персонажа</b>\n\n"
+        f"Пол: {gender_text}\n"
+        f"Выбери возраст персонажа:",
+        parse_mode="HTML",
+        reply_markup=age_selection_menu()
+    )
+    await state.set_state(UGCCreation.waiting_age_selection)
     await c.answer()
 
 @dp.callback_query(F.data.startswith("char_pick:"))
 async def character_picked(c: CallbackQuery, state: FSMContext):
+    """Пользователь выбрал конкретного персонажа"""
     idx = int(c.data.split(":", 1)[1])
-    frames = list_start_frames()[:5]
+    gender = get_character_gender(c.from_user.id)
+    age = get_character_age(c.from_user.id)
     
-    if idx < 0 or idx >= len(frames):
-        await c.message.answer("❌ Некорректный выбор персонажа.")
+    # Получаем изображение персонажа
+    character_image = get_character_image(gender, age, idx)
+    
+    if not character_image:
+        await c.message.answer("❌ Персонаж не найден. Попробуйте выбрать другого.")
         return await c.answer()
     
-    # Сохраняем выбор персонажа
+    # Сохраняем выбор персонажа (используем глобальный индекс)
     set_selected_character(c.from_user.id, idx)
-    print(f"User {c.from_user.id} выбрал персонажа #{idx+1}")
+    print(f"User {c.from_user.id} выбрал персонажа #{idx+1} ({gender}, {age})")
     
     # Переходим к выбору голоса
     voices = list_voice_samples()
@@ -398,6 +685,48 @@ async def change_text_no(c: CallbackQuery, state: FSMContext):
         )
         await state.clear()
     
+    await c.answer()
+
+@dp.callback_query(F.data == "change_voice")
+async def change_voice(c: CallbackQuery, state: FSMContext):
+    """Пользователь хочет выбрать другой голос"""
+    # Получаем сохраненный текст персонажа
+    character_text = get_character_text(c.from_user.id)
+    
+    if not character_text:
+        await c.message.answer(
+            "❌ Не найден текст персонажа. Попробуй начать сначала.",
+            reply_markup=main_menu()
+        )
+        await state.clear()
+        return await c.answer()
+    
+    # Получаем доступные голоса
+    voices = list_voice_samples()
+    
+    if not voices:
+        await c.message.answer(
+            "❌ Нет доступных голосов. Свяжитесь с администратором.",
+            reply_markup=back_to_main_menu()
+        )
+        return await c.answer()
+    
+    # Отправляем сэмплы голосов
+    for idx_voice, (name, voice_id, sample_path) in enumerate(voices):
+        await c.message.answer_audio(
+            FSInputFile(sample_path),
+            caption=f"🎤 Голос #{idx_voice+1}: {name}"
+        )
+    
+    await c.message.answer(
+        f"🎤 <b>Выбор голоса</b>\n\n"
+        f"Текст: <i>\"{character_text[:50]}{'...' if len(character_text) > 50 else ''}\"</i>\n\n"
+        f"Выбери новый голос для озвучки:",
+        parse_mode="HTML",
+        reply_markup=voice_choice_menu(len(voices))
+    )
+    
+    await state.set_state(UGCCreation.waiting_voice_selection)
     await c.answer()
 
 @dp.message(UGCCreation.waiting_new_character_text)
@@ -623,17 +952,30 @@ async def situation_prompt_received(m: Message, state: FSMContext):
         situation_prompt = get_situation_prompt(m.from_user.id)
         audio_path = get_last_audio(m.from_user.id)
         
-        log(f"[UGC] Данные получены: character_idx={character_idx}, text={character_text[:30] if character_text else 'None'}...")
+        # Получаем параметры персонажа
+        gender = get_character_gender(m.from_user.id)
+        age = get_character_age(m.from_user.id)
+        
+        log(f"[UGC] Данные получены: character_idx={character_idx}, gender={gender}, age={age}")
+        log(f"[UGC] Текст: {character_text[:30] if character_text else 'None'}...")
         log(f"[UGC] Аудио: {audio_path}")
         
-        frames = list_start_frames()[:5]
-        log(f"[UGC] Найдено {len(frames)} кадров")
-        
-        selected_frame = frames[character_idx] if character_idx is not None and character_idx < len(frames) else None
+        # Получаем изображение персонажа из новой системы
+        if gender and age and character_idx is not None:
+            selected_frame = get_character_image(gender, age, character_idx)
+            log(f"[UGC] Используем новую систему персонажей: {gender}/{age}, индекс {character_idx}")
+        else:
+            # Fallback к старой системе для обратной совместимости
+            frames = list_start_frames()[:5]
+            selected_frame = frames[character_idx] if character_idx is not None and character_idx < len(frames) else None
+            log(f"[UGC] Используем старую систему персонажей, найдено {len(frames)} кадров")
         
         if not selected_frame:
             log(f"[UGC] ❌ Кадр не найден!")
-            raise Exception("Не удалось найти выбранный кадр")
+            if gender and age:
+                raise Exception(f"Не удалось найти персонажа с параметрами: пол={gender}, возраст={age}, индекс={character_idx}")
+            else:
+                raise Exception("Не удалось найти выбранный кадр")
         
         if not audio_path or not os.path.exists(audio_path):
             log(f"[UGC] ❌ Аудио не найдено!")
