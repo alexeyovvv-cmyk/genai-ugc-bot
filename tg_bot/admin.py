@@ -54,7 +54,7 @@ def parse_args(text: str) -> list[str]:
     return parts[1:] if len(parts) > 1 else []
 
 
-def setup_admin(dp):
+def setup_admin(dp, bot_instance):
     @dp.message(Command("credit_get"))
     @rate_limited
     async def credit_get(m: Message):
@@ -155,9 +155,6 @@ def setup_admin(dp):
         reply_text = parts[2]
         
         try:
-            from aiogram import Bot
-            # Получаем бота из контекста
-            bot_instance = Bot.get_current()
             await bot_instance.send_message(chat_id=target_id, text=f"🛠 Ответ поддержки:\n{reply_text}")
             await m.answer("✅ Ответ отправлен.")
         except Exception as e:

@@ -199,7 +199,7 @@ bot = Bot(token=TELEGRAM_BOT_TOKEN)
 dp = Dispatcher()
 try:
     from tg_bot.admin import setup_admin
-    setup_admin(dp)
+    setup_admin(dp, bot)
     print("✅ Admin module initialized")
 except Exception as e:
     print(f"⚠️  Admin module not initialized: {e}")
