@@ -157,7 +157,11 @@ def setup_admin(dp):
         try:
             await bot.send_message(chat_id=target_id, text=f"🛠 Ответ поддержки:\n{reply_text}")
             await m.answer("✅ Ответ отправлен.")
-        except Exception:
-            await m.answer("❌ Не удалось доставить сообщение пользователю.")
+        except Exception as e:
+            import traceback
+            error_details = f"{type(e).__name__}: {str(e)}"
+            await m.answer(f"❌ Не удалось доставить сообщение пользователю.\n\nОшибка: {error_details}")
+            print(f"[ADMIN_REPLY] Error sending message to {target_id}: {error_details}")
+            traceback.print_exc()
 
 
