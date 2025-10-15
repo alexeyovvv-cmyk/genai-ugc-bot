@@ -9,6 +9,7 @@ from aiogram.fsm.context import FSMContext
 from tg_bot.db import engine
 from tg_bot.models import Base
 from tg_bot.utils.credits import ensure_user, get_credits, spend_credits
+from tg_bot.utils.constants import DEFAULT_CREDITS, COST_UGC_VIDEO
 from tg_bot.keyboards import (
     main_menu, 
     ugc_start_menu, 
@@ -272,7 +273,7 @@ async def cmd_start(m: Message):
     await m.answer(
         "🎬 <b>Добро пожаловать в GenAI UGC Ads!</b>\n\n"
         "Создавайте профессиональные рекламные видео с помощью ИИ.\n"
-        "У вас есть 100 стартовых кредитов.\n\n"
+        f"У вас есть {DEFAULT_CREDITS} стартовых кредитов.\n\n"
         "Выберите действие:",
         parse_mode="HTML",
         reply_markup=main_menu()
@@ -319,7 +320,7 @@ async def show_credits(c: CallbackQuery):
         f"💰 <b>Баланс кредитов</b>\n\n"
         f"У тебя сейчас: <b>{cts} кредитов</b>\n\n"
         f"💡 <b>Стоимость услуг:</b>\n"
-        f"• Генерация UGC видео: 1 кредит"
+        f"• Генерация UGC видео: {COST_UGC_VIDEO} кредит"
         f"{history_text}",
         parse_mode="HTML",
         reply_markup=main_menu()
@@ -329,7 +330,7 @@ async def show_credits(c: CallbackQuery):
 # --- FAQ ---
 @dp.callback_query(F.data == "faq")
 async def show_faq(c: CallbackQuery):
-    faq_text = """
+    faq_text = f"""
 ❓ <b>Как пользоваться ботом</b>
 
 1️⃣ <b>Создать UGC рекламу</b>
@@ -339,8 +340,8 @@ async def show_faq(c: CallbackQuery):
    • Получи готовое видео с говорящим персонажем!
 
 2️⃣ <b>Стоимость</b>
-   • Генерация видео: 1 кредит
-   • При регистрации: 100 бесплатных кредитов
+   • Генерация видео: {COST_UGC_VIDEO} кредит
+   • При регистрации: {DEFAULT_CREDITS} бесплатных кредитов
 
 3️⃣ <b>Технические детали</b>
    • Видео генерируется с помощью Google Veo3
@@ -680,10 +681,10 @@ async def audio_confirmed(c: CallbackQuery, state: FSMContext):
     
     # Проверяем кредиты
     credits = get_credits(c.from_user.id)
-    if credits < 1:
+    if credits < COST_UGC_VIDEO:
         log(f"[UGC] Недостаточно кредитов у user {c.from_user.id}")
         await c.message.answer(
-            "❌ Недостаточно кредитов (нужен 1 кредит).\n\n"
+            f"❌ Недостаточно кредитов (нужно {COST_UGC_VIDEO} кредит).\n\n"
             "Свяжись с администратором для пополнения.",
             reply_markup=main_menu()
         )
@@ -691,7 +692,7 @@ async def audio_confirmed(c: CallbackQuery, state: FSMContext):
         return
     
     # Списываем кредит
-    ok = spend_credits(c.from_user.id, 1, "ugc_video_creation")
+    ok = spend_credits(c.from_user.id, COST_UGC_VIDEO, "ugc_video_creation")
     if not ok:
         log(f"[UGC] Не удалось списать кредит у user {c.from_user.id}")
         await c.message.answer(
@@ -759,6 +760,9 @@ async def audio_confirmed(c: CallbackQuery, state: FSMContext):
             log(f"[UGC] ❌ Ошибка при генерации видео: {video_error}")
             import traceback
             traceback.print_exc()
+            # Авто-рефанд кредита при неуспехе генерации
+            from tg_bot.utils.credits import add_credits
+            add_credits(c.from_user.id, COST_UGC_VIDEO, "refund_ugc_fail")
             raise Exception(f"Ошибка генерации видео: {str(video_error)}")
         
         if video_path:
@@ -767,7 +771,7 @@ async def audio_confirmed(c: CallbackQuery, state: FSMContext):
             
             await c.message.answer_video(
                 FSInputFile(video_path), 
-                caption="🎉 Твоя UGC реклама готова!\n\n(-1 кредит списан)"
+                caption=f"🎉 Твоя UGC реклама готова!\n\n(-{COST_UGC_VIDEO} кредит списан)"
             )
             log(f"[UGC] ✅ Видео отправлено успешно")
             
@@ -779,6 +783,9 @@ async def audio_confirmed(c: CallbackQuery, state: FSMContext):
             except Exception as cleanup_error:
                 log(f"[UGC] ⚠️ Не удалось удалить видео файл: {cleanup_error}")
         else:
+            # Авто-рефанд если видео не получено
+            from tg_bot.utils.credits import add_credits
+            add_credits(c.from_user.id, COST_UGC_VIDEO, "refund_ugc_fail")
             raise Exception("Видео не было сгенерировано")
         
         # Очищаем состояние
