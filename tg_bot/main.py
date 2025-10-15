@@ -230,6 +230,13 @@ async def on_startup():
             else:
                 print(f"[STARTUP] ⚠️  Database is empty - first start or data was lost")
                 
+        # Show Telegram webhook status
+        try:
+            info = await bot.get_webhook_info()
+            print(f"🌐 Webhook info: url={info.url or 'None'}, has_custom_certificate={info.has_custom_certificate}, pending_update_count={info.pending_update_count}")
+        except Exception as wh_err:
+            print(f"⚠️  Could not fetch webhook info: {wh_err}")
+
     except Exception as e:
         print(f"❌ Error creating database tables: {e}")
         raise
@@ -1260,6 +1267,13 @@ async def main():
         print(f"Setting webhook to: {webhook_url}")
         
         try:
+            # Ensure old webhook (if any) is removed first to avoid conflicts
+            await bot.delete_webhook(drop_pending_updates=True)
+            print("Deleted existing webhook (if any)")
+        except Exception as e:
+            print(f"Failed to delete existing webhook (continuing): {e}")
+
+        try:
             await bot.set_webhook(webhook_url, drop_pending_updates=True)
             print("Webhook set successfully!")
         except Exception as e:
@@ -1293,6 +1307,12 @@ async def main():
     else:
         # Local mode: use polling
         print("Starting in polling mode (local development)")
+        # Ensure webhook is removed to avoid conflict with getUpdates
+        try:
+            await bot.delete_webhook(drop_pending_updates=True)
+            print("✅ Deleted webhook before starting polling")
+        except Exception as del_err:
+            print(f"⚠️  Failed to delete webhook before polling: {del_err}")
         await dp.start_polling(bot)
 
 if __name__ == "__main__":
