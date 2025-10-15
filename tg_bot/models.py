@@ -40,6 +40,5 @@ class UserState(Base):
     # Новые поля для UGC рекламы
     selected_character_idx: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # индекс выбранного персонажа
     character_text: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # текст, что должен сказать персонаж
-    situation_prompt: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # описание ситуации для видео
     created_at: Mapped[str] = mapped_column(DateTime, server_default=func.now())
     # updated_at можно добавить позже триггером, пока не требуется

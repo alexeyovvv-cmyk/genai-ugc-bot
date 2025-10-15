@@ -24,4 +24,3 @@ class UGCCreation(StatesGroup):
     waiting_audio_confirmation = State()  # ждем подтверждение аудио или переделку
     waiting_text_change_decision = State()  # ждем решение, менять ли текст
     waiting_new_character_text = State()  # ждем новый текст для переделки аудио
-    waiting_situation_prompt = State()  # ждем описание ситуации (промпт для видео)

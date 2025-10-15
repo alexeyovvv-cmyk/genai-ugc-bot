@@ -27,12 +27,8 @@ from tg_bot.keyboards import (
 )
 from tg_bot.states import UGCCreation
 from tg_bot.services.falai_service import generate_talking_head_video
-# from tg_bot.services.lipsync_service import generate_lipsync_video  # Заменено на falai_service
-# from tg_bot.services.vertex_service import generate_video_veo3  # Временно отключено
 from tg_bot.services.elevenlabs_service import tts_to_file
-from tg_bot.services.prompt_enhancer_service import enhance_video_prompt
 from tg_bot.utils.files import (
-    list_start_frames, 
     list_character_images, 
     get_character_image,
     get_available_genders,
@@ -45,8 +41,6 @@ from tg_bot.utils.user_state import (
     get_selected_character,
     set_character_text,
     get_character_text,
-    set_situation_prompt,
-    get_situation_prompt,
     set_selected_voice,
     get_selected_voice,
     set_last_audio,
@@ -193,7 +187,6 @@ async def on_startup():
                 ALTER TABLE user_state 
                 ADD COLUMN IF NOT EXISTS selected_character_idx INTEGER,
                 ADD COLUMN IF NOT EXISTS character_text VARCHAR,
-                ADD COLUMN IF NOT EXISTS situation_prompt VARCHAR,
                 ADD COLUMN IF NOT EXISTS character_gender VARCHAR,
                 ADD COLUMN IF NOT EXISTS character_age VARCHAR,
                 ADD COLUMN IF NOT EXISTS character_page INTEGER DEFAULT 0;
@@ -594,14 +587,141 @@ async def voice_picked(c: CallbackQuery, state: FSMContext):
 
 @dp.callback_query(F.data == "audio_confirmed")
 async def audio_confirmed(c: CallbackQuery, state: FSMContext):
-    """Пользователь подтвердил аудио, переходим к запросу промпта для видео"""
-    await c.message.answer(
-        "🎬 Отлично! Теперь опиши ситуацию для видео.\n\n"
-        "Например: 'яркий солнечный день, улыбается и машет рукой'\n\n"
-        "Это описание поможет сделать видео более живым.",
-        reply_markup=back_to_main_menu()
-    )
-    await state.set_state(UGCCreation.waiting_situation_prompt)
+    """Пользователь подтвердил аудио, сразу начинаем генерацию видео"""
+    import sys
+    
+    def log(msg):
+        """Логирование с принудительным flush"""
+        print(msg, flush=True)
+        sys.stdout.flush()
+    
+    log(f"[UGC] User {c.from_user.id} подтвердил аудио, начинаем генерацию видео")
+    
+    # Проверяем кредиты
+    credits = get_credits(c.from_user.id)
+    if credits < 1:
+        log(f"[UGC] Недостаточно кредитов у user {c.from_user.id}")
+        await c.message.answer(
+            "❌ Недостаточно кредитов (нужен 1 кредит).\n\n"
+            "Свяжись с администратором для пополнения.",
+            reply_markup=main_menu()
+        )
+        await state.clear()
+        return
+    
+    # Списываем кредит
+    ok = spend_credits(c.from_user.id, 1, "ugc_video_creation")
+    if not ok:
+        log(f"[UGC] Не удалось списать кредит у user {c.from_user.id}")
+        await c.message.answer(
+            "❌ Ошибка при списании кредита.\n\n"
+            "Свяжись с администратором.",
+            reply_markup=main_menu()
+        )
+        await state.clear()
+        return
+    
+    log(f"[UGC] Кредит списан успешно")
+    
+    try:
+        await c.message.answer("⏳ Начинаю создание UGC рекламы...\n\nЭто займет несколько минут.")
+        log(f"[UGC] Стартовое сообщение отправлено")
+        
+        # Получаем сохраненные данные
+        log(f"[UGC] Получаем сохраненные данные...")
+        character_idx = get_selected_character(c.from_user.id)
+        character_text = get_character_text(c.from_user.id)
+        audio_path = get_last_audio(c.from_user.id)
+        
+        # Получаем параметры персонажа
+        gender = get_character_gender(c.from_user.id)
+        age = get_character_age(c.from_user.id)
+        
+        log(f"[UGC] Данные получены: character_idx={character_idx}, gender={gender}, age={age}")
+        log(f"[UGC] Текст: {character_text[:30] if character_text else 'None'}...")
+        log(f"[UGC] Аудио: {audio_path}")
+        
+        # Получаем изображение персонажа
+        if not gender or not age or character_idx is None:
+            raise Exception("Не выбраны параметры персонажа (пол, возраст или индекс). Начните сначала.")
+        
+        selected_frame = get_character_image(gender, age, character_idx)
+        log(f"[UGC] Используем систему персонажей: {gender}/{age}, индекс {character_idx}")
+        
+        if not selected_frame:
+            log(f"[UGC] ❌ Кадр не найден!")
+            if gender and age:
+                raise Exception(f"Не удалось найти персонажа с параметрами: пол={gender}, возраст={age}, индекс={character_idx}")
+            else:
+                raise Exception("Не удалось найти выбранный кадр")
+        
+        if not audio_path or not os.path.exists(audio_path):
+            log(f"[UGC] ❌ Аудио не найдено!")
+            raise Exception("Не удалось найти аудио файл")
+        
+        log(f"[UGC] Выбран кадр: {selected_frame}")
+        
+        # Генерируем видео с помощью fal.ai OmniHuman
+        # Передаем стартовый кадр персонажа и аудио
+        await c.message.answer("🎬 Создаю видео с синхронизацией губ... (это может занять 2-3 минуты)")
+        log(f"[UGC] Начинаем генерацию talking head видео через fal.ai...")
+        log(f"[UGC] Стартовый кадр: {selected_frame}")
+        log(f"[UGC] Аудио файл: {audio_path}")
+        
+        try:
+            video_path = await generate_talking_head_video(
+                audio_path=audio_path,
+                image_path=selected_frame
+            )
+            log(f"[UGC] Видео сгенерировано: {video_path}")
+        except Exception as video_error:
+            log(f"[UGC] ❌ Ошибка при генерации видео: {video_error}")
+            import traceback
+            traceback.print_exc()
+            raise Exception(f"Ошибка генерации видео: {str(video_error)}")
+        
+        if video_path:
+            await c.message.answer("✅ Отправляю готовое видео...")
+            log(f"[UGC] Отправляем видео пользователю...")
+            
+            await c.message.answer_video(
+                FSInputFile(video_path), 
+                caption="🎉 Твоя UGC реклама готова!\n\n(-1 кредит списан)"
+            )
+            log(f"[UGC] ✅ Видео отправлено успешно")
+            
+            # Удаляем видео файл после отправки
+            try:
+                if os.path.exists(video_path):
+                    os.remove(video_path)
+                    log(f"[UGC] ✅ Видео файл удален: {video_path}")
+            except Exception as cleanup_error:
+                log(f"[UGC] ⚠️ Не удалось удалить видео файл: {cleanup_error}")
+        else:
+            raise Exception("Видео не было сгенерировано")
+        
+        # Очищаем состояние
+        await state.clear()
+        log(f"[UGC] Состояние очищено")
+        
+        # Предлагаем создать еще одно видео
+        await c.message.answer(
+            "🎬 Хочешь создать еще одну UGC рекламу?",
+            reply_markup=main_menu()
+        )
+        
+    except Exception as e:
+        log(f"[UGC] ❌ Критическая ошибка при создании UGC рекламы: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        await c.message.answer(
+            f"❌ Произошла ошибка при создании видео:\n\n{str(e)}\n\n"
+            "Попробуй еще раз или свяжись с администратором.",
+            reply_markup=main_menu()
+        )
+        await state.clear()
+    
     await c.answer()
 
 @dp.callback_query(F.data == "audio_redo")
@@ -933,166 +1053,6 @@ async def character_text_received(m: Message, state: FSMContext):
         )
         await state.clear()
 
-@dp.message(UGCCreation.waiting_situation_prompt)
-async def situation_prompt_received(m: Message, state: FSMContext):
-    import sys
-    
-    def log(msg):
-        """Логирование с принудительным flush"""
-        print(msg, flush=True)
-        sys.stdout.flush()
-    
-    log(f"[UGC] User {m.from_user.id} начал создание UGC рекламы")
-    
-    # Улучшаем промпт для видео: переводим и добавляем детали
-    await m.answer("✨ Улучшаю описание ситуации для видео...")
-    log(f"[UGC] Улучшение видео промпта для пользователя {m.from_user.id}")
-    
-    enhanced_prompt = await enhance_video_prompt(m.text)
-    
-    # Показываем пользователю улучшенный промпт
-    if enhanced_prompt != m.text:
-        await m.answer(
-            f"✅ <b>Описание улучшено!</b>\n\n"
-            f"<b>Ваше описание:</b>\n{m.text}\n\n"
-            f"<b>Улучшенное:</b>\n{enhanced_prompt}",
-            parse_mode="HTML"
-        )
-    
-    # Сохраняем УЛУЧШЕННЫЙ промпт
-    set_situation_prompt(m.from_user.id, enhanced_prompt)
-    log(f"[UGC] Улучшенный промпт сохранен: {enhanced_prompt[:50]}...")
-    
-    # Списываем кредит
-    ok = spend_credits(m.from_user.id, 1, "ugc_video_creation")
-    if not ok:
-        log(f"[UGC] Недостаточно кредитов у user {m.from_user.id}")
-        await m.answer(
-            "❌ Недостаточно кредитов (нужен 1 кредит).\n\n"
-            "Свяжись с администратором для пополнения.",
-            reply_markup=main_menu()
-        )
-        await state.clear()
-        return
-    
-    log(f"[UGC] Кредит списан успешно")
-    
-    try:
-        await m.answer("⏳ Начинаю создание UGC рекламы...\n\nЭто займет несколько минут.")
-        log(f"[UGC] Стартовое сообщение отправлено")
-        
-        # Получаем сохраненные данные
-        log(f"[UGC] Получаем сохраненные данные...")
-        character_idx = get_selected_character(m.from_user.id)
-        character_text = get_character_text(m.from_user.id)
-        situation_prompt = get_situation_prompt(m.from_user.id)
-        audio_path = get_last_audio(m.from_user.id)
-        
-        # Получаем параметры персонажа
-        gender = get_character_gender(m.from_user.id)
-        age = get_character_age(m.from_user.id)
-        
-        log(f"[UGC] Данные получены: character_idx={character_idx}, gender={gender}, age={age}")
-        log(f"[UGC] Текст: {character_text[:30] if character_text else 'None'}...")
-        log(f"[UGC] Аудио: {audio_path}")
-        
-        # Получаем изображение персонажа из новой системы
-        if gender and age and character_idx is not None:
-            selected_frame = get_character_image(gender, age, character_idx)
-            log(f"[UGC] Используем новую систему персонажей: {gender}/{age}, индекс {character_idx}")
-        else:
-            # Fallback к старой системе для обратной совместимости
-            frames = list_start_frames()[:5]
-            selected_frame = frames[character_idx] if character_idx is not None and character_idx < len(frames) else None
-            log(f"[UGC] Используем старую систему персонажей, найдено {len(frames)} кадров")
-        
-        if not selected_frame:
-            log(f"[UGC] ❌ Кадр не найден!")
-            if gender and age:
-                raise Exception(f"Не удалось найти персонажа с параметрами: пол={gender}, возраст={age}, индекс={character_idx}")
-            else:
-                raise Exception("Не удалось найти выбранный кадр")
-        
-        if not audio_path or not os.path.exists(audio_path):
-            log(f"[UGC] ❌ Аудио не найдено!")
-            raise Exception("Не удалось найти аудио файл")
-        
-        log(f"[UGC] Выбран кадр: {selected_frame}")
-        
-        # Генерируем видео с помощью fal.ai OmniHuman
-        # Передаем стартовый кадр персонажа и аудио
-        await m.answer("🎬 Создаю видео с синхронизацией губ... (это может занять 2-3 минуты)")
-        log(f"[UGC] Начинаем генерацию talking head видео через fal.ai...")
-        log(f"[UGC] Стартовый кадр: {selected_frame}")
-        log(f"[UGC] Аудио файл: {audio_path}")
-        
-        try:
-            video_path = await generate_talking_head_video(
-                audio_path=audio_path,
-                image_path=selected_frame
-            )
-            log(f"[UGC] Видео сгенерировано: {video_path}")
-        except Exception as video_error:
-            log(f"[UGC] ❌ Ошибка при генерации видео: {video_error}")
-            import traceback
-            traceback.print_exc()
-            raise Exception(f"Ошибка генерации видео: {str(video_error)}")
-        
-        if video_path:
-            await m.answer("✅ Отправляю готовое видео...")
-            log(f"[UGC] Отправляем видео пользователю...")
-            
-            await m.answer_video(
-                FSInputFile(video_path), 
-                caption="🎉 Твоя UGC реклама готова!\n\n(-1 кредит списан)"
-            )
-            log(f"[UGC] ✅ Видео отправлено успешно")
-            
-            # Очистка временных файлов
-            try:
-                if os.path.exists(video_path):
-                    os.remove(video_path)
-                log(f"[UGC] Видео файл очищен: {video_path}")
-            except Exception as cleanup_error:
-                log(f"[UGC] ⚠️ Не удалось очистить видео файл: {cleanup_error}")
-            
-            # Очистка аудио файла
-            try:
-                if audio_path and os.path.exists(audio_path):
-                    os.remove(audio_path)
-                    log(f"[UGC] Аудио файл очищен: {audio_path}")
-            except Exception as cleanup_error:
-                log(f"[UGC] ⚠️ Не удалось очистить аудио файл: {cleanup_error}")
-        else:
-            log(f"[UGC] ❌ Генерация вернула None")
-            raise Exception("Не удалось сгенерировать видео. Попробуйте позже.")
-            
-        await m.answer(
-            "Хочешь создать еще одну рекламу?",
-            reply_markup=main_menu()
-        )
-        log(f"[UGC] ✅ UGC реклама завершена успешно для user {m.from_user.id}")
-        
-    except Exception as e:
-        # Возвращаем кредит при ошибке
-        log(f"[UGC] ❌ ОШИБКА для user {m.from_user.id}: {str(e)}")
-        import traceback
-        log(f"[UGC] Traceback:\n{traceback.format_exc()}")
-        
-        from tg_bot.utils.credits import add_credits
-        add_credits(m.from_user.id, 1, "refund_ugc_fail")
-        log(f"[UGC] Кредит возвращен")
-        
-        error_msg = str(e)
-        await m.answer(
-            f"❌ Что-то пошло не так при создании рекламы.\n\n"
-            f"Ошибка: {error_msg[:100]}\n\n"
-            f"Кредит возвращен. Попробуй позже или свяжись с поддержкой.",
-            reply_markup=main_menu()
-        )
-    finally:
-        await state.clear()
-        log(f"[UGC] Состояние очищено для user {m.from_user.id}")
 
 # --- Settings Menu ---
 @dp.callback_query(F.data == "settings")

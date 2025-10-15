@@ -2,15 +2,8 @@
 import pathlib, glob
 from typing import List, Tuple, Optional
 
-# Старая структура для обратной совместимости
-OLD_IMG_DIR = pathlib.Path("data/start_frames")
-
-# Новая структура персонажей
+# Структура персонажей
 CHARACTERS_DIR = pathlib.Path("data/characters")
-
-def list_start_frames() -> List[str]:
-    """Обратная совместимость - возвращает старые кадры"""
-    return sorted(glob.glob(str(OLD_IMG_DIR / "*.*")))[:10]
 
 def list_character_images(gender: str, age: str, page: int = 0, limit: int = 5) -> Tuple[List[str], bool]:
     """

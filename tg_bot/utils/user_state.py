@@ -109,22 +109,5 @@ def get_character_text(tg_id: int) -> Optional[str]:
         return state.character_text if state else None
 
 
-def set_situation_prompt(tg_id: int, prompt: Optional[str]) -> None:
-    with SessionLocal() as db:
-        user = db.scalar(select(User).where(User.tg_id == tg_id))
-        if not user:
-            return
-        state = _get_or_create_state(db, user.id)
-        state.situation_prompt = prompt
-        db.commit()
-
-
-def get_situation_prompt(tg_id: int) -> Optional[str]:
-    with SessionLocal() as db:
-        user = db.scalar(select(User).where(User.tg_id == tg_id))
-        if not user:
-            return None
-        state = db.scalar(select(UserState).where(UserState.user_id == user.id))
-        return state.situation_prompt if state else None
 
 

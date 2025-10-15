@@ -161,7 +161,7 @@ def _sync_generate_talking_head(audio_path: str, image_path: str) -> Optional[st
             return None
         
         # Save video
-        video_filename = f"falai_omnihuman_{int(time.time())}.mp4"
+        video_filename = f"datanauts_ugcad_{int(time.time())}.mp4"
         video_path = VIDEO_DIR / video_filename
         
         with open(video_path, "wb") as f:
