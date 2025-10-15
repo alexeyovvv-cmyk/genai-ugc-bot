@@ -1,8 +1,9 @@
-[phases.setup]
-nixPkgs = ["python311", "gcc", "python311Packages.pip"]
+# Nixpacks конфигурация отключена в пользу Dockerfile
+# [phases.setup]
+# nixPkgs = ["python311", "gcc", "python311Packages.pip"]
 
-[phases.install]
-cmds = ["python -m pip install -r tg_bot/requirements.txt"]
+# [phases.install]
+# cmds = ["python -m pip install -r tg_bot/requirements.txt"]
 
-[start]
-cmd = "python -m tg_bot.main"
+# [start]
+# cmd = "python -m tg_bot.main"
