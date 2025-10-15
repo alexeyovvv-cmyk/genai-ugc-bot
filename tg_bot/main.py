@@ -2,7 +2,7 @@
 import asyncio, os, pathlib
 from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher, F
-from aiogram.types import Message, CallbackQuery, FSInputFile
+from aiogram.types import Message, CallbackQuery, FSInputFile, InputMediaPhoto
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 
@@ -448,13 +448,18 @@ async def show_character_gallery(c: CallbackQuery, state: FSMContext):
         )
         return await c.answer()
     
-    # Отправляем изображения персонажей
+    # Отправляем изображения персонажей одним альбомом (до 5 в одной группе)
+    media = []
     for idx, image_path in enumerate(images):
         global_index = page * 5 + idx
-        await c.message.answer_photo(
-            FSInputFile(image_path),
-            caption=f"👤 Персонаж #{global_index+1}"
+        caption = f"👤 Персонаж #{global_index+1}" if idx == 0 else None
+        media.append(
+            InputMediaPhoto(
+                media=FSInputFile(image_path),
+                caption=caption
+            )
         )
+    await c.message.answer_media_group(media)
     
     # Отправляем меню с навигацией
     await c.message.answer(
