@@ -65,26 +65,34 @@ def age_selection_menu():
     ])
 
 def character_gallery_menu(page: int, has_next: bool, total_count: int):
-    """Меню галереи персонажей с пагинацией"""
+    """Меню галереи персонажей с выбором и пагинацией.
+    total_count — кол-во персонажей, показанных на текущей странице (≤5).
+    """
     buttons = []
-    
+
+    # Кнопки выбора персонажей (по одному в строке)
+    for i in range(total_count):
+        global_index = page * 5 + i
+        buttons.append([
+            InlineKeyboardButton(
+                text=f"Выбрать персонажа #{global_index+1}",
+                callback_data=f"char_pick:{global_index}"
+            )
+        ])
+
     # Кнопки навигации по страницам
     nav_buttons = []
     if page > 0:
         nav_buttons.append(InlineKeyboardButton(text="⬅️ Предыдущая", callback_data=f"char_page:{page-1}"))
-    
     if has_next:
         nav_buttons.append(InlineKeyboardButton(text="Следующая ➡️", callback_data=f"char_page:{page+1}"))
-    
     if nav_buttons:
         buttons.append(nav_buttons)
-    
-    # Кнопка изменения параметров
+
+    # Кнопка изменения параметров и назад
     buttons.append([InlineKeyboardButton(text="🔄 Изменить параметры персонажа", callback_data="change_character_params")])
-    
-    # Кнопка назад
     buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_age")])
-    
+
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 def character_selection_menu(character_count: int, page: int):
