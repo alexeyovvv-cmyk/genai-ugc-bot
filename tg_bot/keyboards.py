@@ -56,9 +56,6 @@ def age_selection_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(text="🧒 Молодой (18-25)", callback_data="age_young"),
-            InlineKeyboardButton(text="👨 Взрослый (26-50)", callback_data="age_adult")
-        ],
-        [
             InlineKeyboardButton(text="👴 Пожилой (50+)", callback_data="age_elderly")
         ],
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_gender")]
@@ -123,8 +120,39 @@ def voices_menu(voices: list[str]):
     ]
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
+def voice_gallery_menu(page: int, has_next: bool, total_count: int):
+    """Меню галереи голосов с выбором и пагинацией.
+    total_count — кол-во голосов, показанных на текущей странице (≤5).
+    """
+    buttons = []
+
+    # Кнопки выбора голосов (по одному в строке)
+    for i in range(total_count):
+        global_index = page * 5 + i
+        buttons.append([
+            InlineKeyboardButton(
+                text=f"Выбрать голос #{global_index+1}",
+                callback_data=f"voice_pick:{global_index}"
+            )
+        ])
+
+    # Кнопки навигации по страницам
+    nav_buttons = []
+    if page > 0:
+        nav_buttons.append(InlineKeyboardButton(text="⬅️ Предыдущая", callback_data=f"voice_page:{page-1}"))
+    if has_next:
+        nav_buttons.append(InlineKeyboardButton(text="Следующая ➡️", callback_data=f"voice_page:{page+1}"))
+    if nav_buttons:
+        buttons.append(nav_buttons)
+
+    # Кнопка изменения параметров персонажа и назад
+    buttons.append([InlineKeyboardButton(text="🔄 Изменить персонажа", callback_data="change_character_params")])
+    buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_character_gallery")])
+
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
 def voice_choice_menu(count: int):
-    # Кнопки 1..count, callback_data=voice_pick:N
+    # Кнопки 1..count, callback_data=voice_pick:N (для обратной совместимости)
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text=str(i+1), callback_data=f"voice_pick:{i}")] for i in range(count)

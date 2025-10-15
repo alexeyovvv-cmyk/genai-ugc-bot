@@ -11,7 +11,7 @@ def list_character_images(gender: str, age: str, page: int = 0, limit: int = 5) 
     
     Args:
         gender: 'male' или 'female'
-        age: 'young', 'adult', 'elderly'
+        age: 'young', 'elderly'
         page: номер страницы (начиная с 0)
         limit: количество изображений на странице
     
@@ -47,7 +47,7 @@ def get_character_image(gender: str, age: str, index: int) -> Optional[str]:
     
     Args:
         gender: 'male' или 'female'
-        age: 'young', 'adult', 'elderly'
+        age: 'young', 'elderly'
         index: индекс изображения
     
     Returns:

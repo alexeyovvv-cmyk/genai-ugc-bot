@@ -2,7 +2,7 @@
 import asyncio, os, pathlib
 from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher, F
-from aiogram.types import Message, CallbackQuery, FSInputFile, InputMediaPhoto
+from aiogram.types import Message, CallbackQuery, FSInputFile, InputMediaPhoto, InputMediaAudio
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 
@@ -15,6 +15,7 @@ from tg_bot.keyboards import (
     character_choice_menu, 
     back_to_main_menu,
     voice_choice_menu,
+    voice_gallery_menu,
     audio_confirmation_menu,
     text_change_decision_menu,
     settings_menu,
@@ -34,7 +35,7 @@ from tg_bot.utils.files import (
     get_available_genders,
     get_available_ages
 )
-from tg_bot.utils.voices import list_voice_samples
+from tg_bot.utils.voices import list_voice_samples, get_voice_sample, list_all_voice_samples
 from tg_bot.utils.audio import check_audio_duration_limit
 from tg_bot.utils.user_state import (
     set_selected_character,
@@ -135,6 +136,35 @@ def get_character_page(tg_id: int) -> int:
         """), {"tg_id": tg_id}).fetchone()
         return result[0] if result and result[0] is not None else 0
 
+def set_voice_page(tg_id: int, page: int):
+    """Сохранить текущую страницу голосов"""
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        # Сначала убеждаемся, что запись в user_state существует
+        conn.execute(text("""
+            INSERT INTO user_state (user_id) 
+            SELECT id FROM users WHERE tg_id = :tg_id
+            ON CONFLICT (user_id) DO NOTHING
+        """), {"tg_id": tg_id})
+        
+        # Теперь обновляем
+        conn.execute(text("""
+            UPDATE user_state 
+            SET voice_page = :page 
+            WHERE user_id = (SELECT id FROM users WHERE tg_id = :tg_id)
+        """), {"page": page, "tg_id": tg_id})
+        conn.commit()
+
+def get_voice_page(tg_id: int) -> int:
+    """Получить текущую страницу голосов"""
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        result = conn.execute(text("""
+            SELECT voice_page FROM user_state 
+            WHERE user_id = (SELECT id FROM users WHERE tg_id = :tg_id)
+        """), {"tg_id": tg_id}).fetchone()
+        return result[0] if result and result[0] is not None else 0
+
 load_dotenv()
 
 # Check for required environment variables
@@ -189,7 +219,9 @@ async def on_startup():
                 ADD COLUMN IF NOT EXISTS character_text VARCHAR,
                 ADD COLUMN IF NOT EXISTS character_gender VARCHAR,
                 ADD COLUMN IF NOT EXISTS character_age VARCHAR,
-                ADD COLUMN IF NOT EXISTS character_page INTEGER DEFAULT 0;
+                ADD COLUMN IF NOT EXISTS character_page INTEGER DEFAULT 0,
+                ADD COLUMN IF NOT EXISTS selected_voice_idx INTEGER,
+                ADD COLUMN IF NOT EXISTS voice_page INTEGER DEFAULT 0;
                 """
                 conn.execute(text(migration_sql))
                 conn.commit()
@@ -396,14 +428,7 @@ async def age_young_selected(c: CallbackQuery, state: FSMContext):
     
     await show_character_gallery(c, state)
 
-@dp.callback_query(F.data == "age_adult")
-async def age_adult_selected(c: CallbackQuery, state: FSMContext):
-    """Пользователь выбрал взрослый возраст"""
-    set_character_age(c.from_user.id, "adult")
-    set_character_page(c.from_user.id, 0)  # Сбрасываем страницу
-    print(f"User {c.from_user.id} выбрал возраст: взрослый")
-    
-    await show_character_gallery(c, state)
+## adult категория удалена
 
 @dp.callback_query(F.data == "age_elderly")
 async def age_elderly_selected(c: CallbackQuery, state: FSMContext):
@@ -465,6 +490,57 @@ async def show_character_gallery(c: CallbackQuery, state: FSMContext):
     await state.set_state(UGCCreation.waiting_character_gallery)
     await c.answer()
 
+async def show_voice_gallery(c: CallbackQuery, state: FSMContext):
+    """Показать галерею голосов для выбранного персонажа"""
+    gender = get_character_gender(c.from_user.id)
+    age = get_character_age(c.from_user.id)
+    page = get_voice_page(c.from_user.id)
+    
+    if not gender or not age:
+        await c.message.answer(
+            "❌ Ошибка: не выбраны параметры персонажа. Начните сначала.",
+            reply_markup=back_to_main_menu()
+        )
+        return await c.answer()
+    
+    # Получаем голоса для текущей страницы
+    voices, has_next = list_voice_samples(gender, age, page, limit=5)
+    
+    if not voices:
+        await c.message.edit_text(
+            f"❌ <b>Нет доступных голосов</b>\n\n"
+            f"Для выбранной категории персонажа (пол: {gender}, возраст: {age}) "
+            f"голоса не найдены.\n\n"
+            f"Попробуйте изменить параметры персонажа:",
+            parse_mode="HTML",
+            reply_markup=voice_gallery_menu(page, has_next, len(voices))
+        )
+        return await c.answer()
+    
+    # Отправляем аудио-сэмплы голосов одним альбомом (до 5 в одной группе)
+    media = []
+    for idx, (name, voice_id, audio_path) in enumerate(voices):
+        global_index = page * 5 + idx
+        caption = f"🎤 Голос #{global_index+1}: {name}" if idx == 0 else None
+        media.append(
+            InputMediaAudio(
+                media=FSInputFile(audio_path),
+                caption=caption
+            )
+        )
+    await c.message.answer_media_group(media)
+    
+    # Отправляем меню с навигацией
+    await c.message.answer(
+        f"🎤 <b>Голоса для персонажа ({gender}, {age})</b>\n\n"
+        f"Страница {page + 1}. Выбери голос для озвучки:",
+        parse_mode="HTML",
+        reply_markup=voice_gallery_menu(page, has_next, len(voices))
+    )
+    
+    await state.set_state(UGCCreation.waiting_voice_gallery)
+    await c.answer()
+
 @dp.callback_query(F.data.startswith("char_page:"))
 async def character_page_changed(c: CallbackQuery, state: FSMContext):
     """Пользователь переключил страницу персонажей"""
@@ -472,6 +548,20 @@ async def character_page_changed(c: CallbackQuery, state: FSMContext):
     set_character_page(c.from_user.id, page)
     print(f"User {c.from_user.id} переключил на страницу {page}")
     
+    await show_character_gallery(c, state)
+
+@dp.callback_query(F.data.startswith("voice_page:"))
+async def voice_page_changed(c: CallbackQuery, state: FSMContext):
+    """Пользователь переключил страницу голосов"""
+    page = int(c.data.split(":", 1)[1])
+    set_voice_page(c.from_user.id, page)
+    print(f"User {c.from_user.id} переключил на страницу голосов {page}")
+    
+    await show_voice_gallery(c, state)
+
+@dp.callback_query(F.data == "back_to_character_gallery")
+async def back_to_character_gallery(c: CallbackQuery, state: FSMContext):
+    """Возврат к галерее персонажей из галереи голосов"""
     await show_character_gallery(c, state)
 
 @dp.callback_query(F.data == "change_character_params")
@@ -530,51 +620,42 @@ async def character_picked(c: CallbackQuery, state: FSMContext):
     
     # Сохраняем выбор персонажа (используем глобальный индекс)
     set_selected_character(c.from_user.id, idx)
+    set_voice_page(c.from_user.id, 0)  # Сбрасываем страницу голосов
     print(f"User {c.from_user.id} выбрал персонажа #{idx+1} ({gender}, {age})")
     
-    # Переходим к выбору голоса
-    voices = list_voice_samples()
+    # Показываем галерею голосов для выбранного персонажа
+    await show_voice_gallery(c, state)
+
+@dp.callback_query(F.data.startswith("voice_pick:"))
+async def voice_picked(c: CallbackQuery, state: FSMContext):
+    """Пользователь выбрал конкретный голос"""
+    idx = int(c.data.split(":", 1)[1])
+    gender = get_character_gender(c.from_user.id)
+    age = get_character_age(c.from_user.id)
     
-    if not voices:
+    if not gender or not age:
         await c.message.answer(
-            "❌ Нет доступных голосов. Свяжитесь с администратором.",
+            "❌ Ошибка: не выбраны параметры персонажа. Начните сначала.",
             reply_markup=back_to_main_menu()
         )
         return await c.answer()
     
-    # Отправляем сэмплы голосов
-    for idx_voice, (name, voice_id, sample_path) in enumerate(voices):
-        await c.message.answer_audio(
-            FSInputFile(sample_path),
-            caption=f"🎤 Голос #{idx_voice+1}: {name}"
-        )
+    # Получаем голос по индексу с учетом категории
+    voice_data = get_voice_sample(gender, age, idx)
     
-    await c.message.answer(
-        f"✅ Отлично! Ты выбрал персонажа #{idx+1}\n\n"
-        "🎤 Теперь выбери голос для озвучки:",
-        reply_markup=voice_choice_menu(len(voices))
-    )
-    
-    await state.set_state(UGCCreation.waiting_voice_selection)
-    await c.answer()
-
-@dp.callback_query(F.data.startswith("voice_pick:"))
-async def voice_picked(c: CallbackQuery, state: FSMContext):
-    idx = int(c.data.split(":", 1)[1])
-    voices = list_voice_samples()
-    
-    if idx < 0 or idx >= len(voices):
-        await c.message.answer("❌ Некорректный выбор голоса.")
+    if not voice_data:
+        await c.message.answer("❌ Голос не найден. Попробуйте выбрать другой.")
         return await c.answer()
     
-    # Сохраняем выбор голоса
-    name, voice_id, sample_path = voices[idx]
+    name, voice_id, sample_path = voice_data
+    
+    # Сохраняем выбор голоса (используем глобальный индекс)
     set_selected_voice(c.from_user.id, voice_id)
-    print(f"User {c.from_user.id} выбрал голос: {name} ({voice_id})")
+    print(f"User {c.from_user.id} выбрал голос #{idx+1}: {name} ({voice_id})")
     
     # Переходим к запросу текста
     await c.message.answer(
-        f"✅ Отлично! Выбран голос: {name}\n\n"
+        f"✅ Отлично! Выбран голос #{idx+1}: {name}\n\n"
         "📝 Теперь напиши текст, который должен сказать персонаж.\n\n"
         "⚠️ <b>Важно:</b> Текст должен быть таким, чтобы озвучка заняла не более 15 секунд!\n\n"
         "Например: 'Привет! Попробуй наш новый продукт со скидкой 20%!'",
@@ -857,33 +938,21 @@ async def change_voice(c: CallbackQuery, state: FSMContext):
         await state.clear()
         return await c.answer()
     
-    # Получаем доступные голоса
-    voices = list_voice_samples()
+    # Проверяем, что параметры персонажа выбраны
+    gender = get_character_gender(c.from_user.id)
+    age = get_character_age(c.from_user.id)
     
-    if not voices:
+    if not gender or not age:
         await c.message.answer(
-            "❌ Нет доступных голосов. Свяжитесь с администратором.",
-            reply_markup=back_to_main_menu()
+            "❌ Не выбраны параметры персонажа. Начните сначала.",
+            reply_markup=main_menu()
         )
+        await state.clear()
         return await c.answer()
     
-    # Отправляем сэмплы голосов
-    for idx_voice, (name, voice_id, sample_path) in enumerate(voices):
-        await c.message.answer_audio(
-            FSInputFile(sample_path),
-            caption=f"🎤 Голос #{idx_voice+1}: {name}"
-        )
-    
-    await c.message.answer(
-        f"🎤 <b>Выбор голоса</b>\n\n"
-        f"Текст: <i>\"{character_text[:50]}{'...' if len(character_text) > 50 else ''}\"</i>\n\n"
-        f"Выбери новый голос для озвучки:",
-        parse_mode="HTML",
-        reply_markup=voice_choice_menu(len(voices))
-    )
-    
-    await state.set_state(UGCCreation.waiting_voice_selection)
-    await c.answer()
+    # Сбрасываем страницу голосов и показываем галерею
+    set_voice_page(c.from_user.id, 0)
+    await show_voice_gallery(c, state)
 
 @dp.message(UGCCreation.waiting_new_character_text)
 async def new_character_text_received(m: Message, state: FSMContext):
@@ -1077,8 +1146,8 @@ async def show_voice_settings(c: CallbackQuery):
 
 @dp.callback_query(F.data == "listen_voices")
 async def listen_voices(c: CallbackQuery):
-    """Показать доступные голоса для прослушивания"""
-    voices = list_voice_samples()
+    """Показать доступные голоса для прослушивания (все категории)"""
+    voices = list_all_voice_samples()
     
     if not voices:
         await c.message.answer(
@@ -1087,7 +1156,7 @@ async def listen_voices(c: CallbackQuery):
         )
         return await c.answer()
     
-    # Отправляем сэмплы голосов
+    # Отправляем сэмплы голосов всех категорий
     for idx, (name, voice_id, sample_path) in enumerate(voices):
         await c.message.answer_audio(
             FSInputFile(sample_path),
@@ -1095,7 +1164,10 @@ async def listen_voices(c: CallbackQuery):
         )
     
     await c.message.answer(
-        "🎵 Вот все доступные голоса для озвучки:",
+        f"🎵 Вот все доступные голоса для озвучки (всего {len(voices)}):\n\n"
+        "💡 <b>Примечание:</b> При создании видео вам будут показаны только голоса, "
+        "подходящие для выбранного персонажа (по полу и возрасту).",
+        parse_mode="HTML",
         reply_markup=voice_settings_menu()
     )
     await c.answer()

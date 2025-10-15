@@ -40,5 +40,11 @@ class UserState(Base):
     # Новые поля для UGC рекламы
     selected_character_idx: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # индекс выбранного персонажа
     character_text: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # текст, что должен сказать персонаж
+    selected_voice_idx: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # индекс выбранного голоса
+    # Дополнительные поля для персонажей
+    character_gender: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # пол персонажа
+    character_age: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # возраст персонажа
+    character_page: Mapped[Optional[int]] = mapped_column(Integer, default=0)  # текущая страница персонажей
+    voice_page: Mapped[Optional[int]] = mapped_column(Integer, default=0)  # текущая страница голосов
     created_at: Mapped[str] = mapped_column(DateTime, server_default=func.now())
     # updated_at можно добавить позже триггером, пока не требуется

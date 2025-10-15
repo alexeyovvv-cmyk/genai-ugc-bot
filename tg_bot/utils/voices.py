@@ -1,26 +1,96 @@
 import glob
 import pathlib
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 
 VOICES_DIR = pathlib.Path("data/audio/voices")
 
 
-def list_voice_samples() -> List[Tuple[str, str, str]]:
-    """Return list of (name, voice_id, path) for available mp3 samples.
-    Filename formats supported:
-      - Name__VOICEID.mp3  -> name=Name, voice_id=VOICEID
-      - Name.mp3           -> name=Name, voice_id=Name
+def list_voice_samples(gender: str = None, age: str = None, page: int = 0, limit: int = 5) -> Tuple[List[Tuple[str, str, str]], bool]:
     """
-    paths = sorted(glob.glob(str(VOICES_DIR / "*.mp3")))
-    result: List[Tuple[str, str, str]] = []
-    for p in paths:
-        fname = pathlib.Path(p).stem
-        if "__" in fname:
-            name, voice_id = fname.split("__", 1)
+    Получить список голосов с пагинацией
+    
+    Args:
+        gender: 'male' или 'female' (если None, то все полы)
+        age: 'young', 'elderly' (если None, то все возрасты)
+        page: номер страницы (начиная с 0)
+        limit: количество голосов на странице
+    
+    Returns:
+        Tuple[List[Tuple[str, str, str]], bool]: 
+            (список (name, voice_id, path), есть_ли_следующая_страница)
+    """
+    try:
+        if gender and age:
+            # Получаем голоса для конкретной категории
+            target_dir = VOICES_DIR / gender / age
+            if not target_dir.exists():
+                return [], False
+            paths = sorted(glob.glob(str(target_dir / "*.mp3")))
         else:
-            name, voice_id = fname, fname
-        result.append((name, voice_id, p))
-    return result
+            # Получаем все голоса всех категорий (для настроек)
+            paths = []
+            for gender_dir in VOICES_DIR.iterdir():
+                if gender_dir.is_dir():
+                    for age_dir in gender_dir.iterdir():
+                        if age_dir.is_dir():
+                            paths.extend(sorted(glob.glob(str(age_dir / "*.mp3"))))
+            paths = sorted(paths)
+        
+        # Парсим файлы
+        result: List[Tuple[str, str, str]] = []
+        for p in paths:
+            fname = pathlib.Path(p).stem
+            if "__" in fname:
+                name, voice_id = fname.split("__", 1)
+            else:
+                name, voice_id = fname, fname
+            result.append((name, voice_id, p))
+        
+        # Применяем пагинацию
+        start_idx = page * limit
+        end_idx = start_idx + limit
+        
+        page_voices = result[start_idx:end_idx]
+        has_next = end_idx < len(result)
+        
+        return page_voices, has_next
+        
+    except Exception as e:
+        print(f"Error listing voice samples: {e}")
+        return [], False
+
+
+def get_voice_sample(gender: str, age: str, index: int) -> Optional[Tuple[str, str, str]]:
+    """
+    Получить конкретный голос по индексу
+    
+    Args:
+        gender: 'male' или 'female'
+        age: 'young', 'elderly'
+        index: индекс голоса
+    
+    Returns:
+        Optional[Tuple[str, str, str]]: (name, voice_id, path) или None
+    """
+    try:
+        voices, _ = list_voice_samples(gender, age, page=0, limit=1000)  # Получаем все
+        if 0 <= index < len(voices):
+            return voices[index]
+        return None
+    except Exception as e:
+        print(f"Error getting voice sample: {e}")
+        return None
+
+
+def list_all_voice_samples() -> List[Tuple[str, str, str]]:
+    """
+    Получить все голоса всех категорий (для обратной совместимости и настроек)
+    
+    Returns:
+        List[Tuple[str, str, str]]: список (name, voice_id, path)
+    """
+    voices, _ = list_voice_samples(page=0, limit=10000)  # Большой лимит чтобы получить все
+    return voices
 
 

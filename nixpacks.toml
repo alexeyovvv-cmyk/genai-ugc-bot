@@ -1,8 +1,8 @@
 [phases.setup]
-nixPkgs = ["python39", "gcc"]
+nixPkgs = ["python311", "gcc", "python311Packages.pip"]
 
 [phases.install]
-cmds = ["pip install -r tg_bot/requirements.txt"]
+cmds = ["python -m pip install -r tg_bot/requirements.txt"]
 
 [start]
 cmd = "python -m tg_bot.main"
