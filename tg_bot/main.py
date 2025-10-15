@@ -1152,7 +1152,12 @@ async def show_settings(c: CallbackQuery):
 @dp.callback_query(F.data == "topup_request")
 async def topup_request(c: CallbackQuery):
     await c.message.answer(
-        "Чтобы пополнить счёт, свяжитесь с администратором.",
+        (
+            "Чтобы пополнить счёт, свяжитесь с администратором.\n\n"
+            f"Ваш Telegram ID: <b>{c.from_user.id}</b>\n"
+            "Передайте этот ID администратору для пополнения."
+        ),
+        parse_mode="HTML",
         reply_markup=back_to_main_menu()
     )
     await c.answer()
