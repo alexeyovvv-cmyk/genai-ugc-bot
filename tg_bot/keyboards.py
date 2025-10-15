@@ -196,6 +196,13 @@ def settings_menu():
         [InlineKeyboardButton(text="⬅️ В главное меню", callback_data="back_to_main")]
     ])
 
+def credits_menu():
+    """Меню раздела кредитов: пополнение и назад"""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💳 Пополнить счёт", callback_data="topup_request")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")],
+    ])
+
 def voice_settings_menu():
     """Меню настроек голосов"""
     return InlineKeyboardMarkup(inline_keyboard=[

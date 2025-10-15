@@ -25,7 +25,8 @@ from tg_bot.keyboards import (
     gender_selection_menu,
     age_selection_menu,
     character_gallery_menu,
-    character_selection_menu
+    character_selection_menu,
+    credits_menu,
 )
 from tg_bot.states import UGCCreation
 from tg_bot.services.falai_service import generate_talking_head_video
@@ -197,6 +198,12 @@ else:
 
 bot = Bot(token=TELEGRAM_BOT_TOKEN)
 dp = Dispatcher()
+try:
+    from tg_bot.admin import setup_admin
+    setup_admin(dp)
+    print("✅ Admin module initialized")
+except Exception as e:
+    print(f"⚠️  Admin module not initialized: {e}")
 
 # Выборы пользователя и путь к последнему аудио теперь сохраняются в БД
 
@@ -324,7 +331,7 @@ async def show_credits(c: CallbackQuery):
         f"• Генерация UGC видео: {COST_UGC_VIDEO} кредит"
         f"{history_text}",
         parse_mode="HTML",
-        reply_markup=main_menu()
+        reply_markup=credits_menu()
     )
     await c.answer()
 
@@ -1139,6 +1146,14 @@ async def show_settings(c: CallbackQuery):
         "Выберите раздел для настройки:",
         parse_mode="HTML",
         reply_markup=settings_menu()
+    )
+    await c.answer()
+
+@dp.callback_query(F.data == "topup_request")
+async def topup_request(c: CallbackQuery):
+    await c.message.answer(
+        "Чтобы пополнить счёт, свяжитесь с администратором.",
+        reply_markup=back_to_main_menu()
     )
     await c.answer()
 

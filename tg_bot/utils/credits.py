@@ -70,3 +70,20 @@ def spend_credits(tg_id: int, amount: int, reason: str) -> bool:
         db.commit()
         print(f"[CREDITS] ✅ User {tg_id}: -{amount} credits ({old_credits} → {u.credits}) [reason: {reason}]", flush=True)
         return True
+
+def set_credits(tg_id: int, new_balance: int, reason: str = "admin_set"):
+    """Устанавливает точный баланс пользователя, записывает delta в CreditLog."""
+    from sqlalchemy import select
+    with SessionLocal() as db:
+        u = db.scalar(select(User).where(User.tg_id == tg_id))
+        if not u:
+            print(f"[CREDITS] ❌ User {tg_id} not found for set_credits", flush=True)
+            return
+        delta = new_balance - u.credits
+        if delta == 0:
+            print(f"[CREDITS] ⚠️ set_credits no-op for user {tg_id}", flush=True)
+            return
+        u.credits = new_balance
+        db.add(CreditLog(user_id=u.id, delta=delta, reason=reason))
+        db.commit()
+        print(f"[CREDITS] ✅ User {tg_id}: set to {new_balance} (delta {delta}) [reason: {reason}]", flush=True)
