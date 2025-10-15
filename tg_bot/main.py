@@ -270,10 +270,11 @@ async def on_startup():
 @dp.message(CommandStart())
 async def cmd_start(m: Message):
     ensure_user(m.from_user.id)
+    current_credits = get_credits(m.from_user.id)
     await m.answer(
         "🎬 <b>Добро пожаловать в GenAI UGC Ads!</b>\n\n"
         "Создавайте профессиональные рекламные видео с помощью ИИ.\n"
-        f"У вас есть {DEFAULT_CREDITS} стартовых кредитов.\n\n"
+        f"У тебя сейчас: <b>{current_credits} кредитов</b>.\n\n"
         "Выберите действие:",
         parse_mode="HTML",
         reply_markup=main_menu()

@@ -186,11 +186,10 @@ def settings_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
         # Основные настройки в два столбца
         [
-            InlineKeyboardButton(text="🎤 Голоса", callback_data="voice_settings"),
-            InlineKeyboardButton(text="📊 Статистика", callback_data="stats")
+            InlineKeyboardButton(text="📊 Статистика", callback_data="stats"),
+            InlineKeyboardButton(text="ℹ️ О боте", callback_data="about"),
         ],
         [
-            InlineKeyboardButton(text="ℹ️ О боте", callback_data="about"),
             InlineKeyboardButton(text="🆘 Поддержка", callback_data="support")
         ],
         # Навигация
