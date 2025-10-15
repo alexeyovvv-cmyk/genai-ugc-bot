@@ -3,7 +3,7 @@ import asyncio, os, pathlib
 from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, CallbackQuery, FSInputFile, InputMediaPhoto, InputMediaAudio
-from aiogram.filters import CommandStart
+from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
 
 from tg_bot.db import engine
@@ -19,8 +19,7 @@ from tg_bot.keyboards import (
     voice_gallery_menu,
     audio_confirmation_menu,
     text_change_decision_menu,
-    settings_menu,
-    voice_settings_menu,
+    feedback_menu,
     bottom_navigation_menu,
     gender_selection_menu,
     age_selection_menu,
@@ -1138,14 +1137,16 @@ async def character_text_received(m: Message, state: FSMContext):
         await state.clear()
 
 
-# --- Settings Menu ---
-@dp.callback_query(F.data == "settings")
-async def show_settings(c: CallbackQuery):
+from tg_bot.states import Feedback
+
+@dp.callback_query(F.data == "feedback")
+async def show_feedback(c: CallbackQuery):
     await c.message.edit_text(
-        "⚙️ <b>Настройки</b>\n\n"
-        "Выберите раздел для настройки:",
+        "✉️ <b>Обратная связь</b>\n\n"
+        "Здесь вы можете оставить отзыв или вопрос.\n\n"
+        "Нажмите кнопку ниже, чтобы написать сообщение, и мы получим его.",
         parse_mode="HTML",
-        reply_markup=settings_menu()
+        reply_markup=feedback_menu()
     )
     await c.answer()
 
@@ -1162,113 +1163,40 @@ async def topup_request(c: CallbackQuery):
     )
     await c.answer()
 
-@dp.callback_query(F.data == "voice_settings")
-async def show_voice_settings(c: CallbackQuery):
-    await c.message.edit_text(
-        "🎤 <b>Настройки голосов</b>\n\n"
-        "Управление голосами для озвучки:",
-        parse_mode="HTML",
-        reply_markup=voice_settings_menu()
-    )
-    await c.answer()
-
-@dp.callback_query(F.data == "listen_voices")
-async def listen_voices(c: CallbackQuery):
-    """Показать доступные голоса для прослушивания (все категории)"""
-    voices = list_all_voice_samples()
-    
-    if not voices:
-        await c.message.answer(
-            "❌ Нет доступных голосов. Свяжитесь с администратором.",
-            reply_markup=voice_settings_menu()
-        )
-        return await c.answer()
-    
-    # Отправляем сэмплы голосов всех категорий
-    for idx, (name, voice_id, sample_path) in enumerate(voices):
-        await c.message.answer_audio(
-            FSInputFile(sample_path),
-            caption=f"🎤 Голос #{idx+1}: {name}"
-        )
-    
+@dp.callback_query(F.data == "feedback_write")
+async def feedback_write(c: CallbackQuery, state: FSMContext):
     await c.message.answer(
-        f"🎵 Вот все доступные голоса для озвучки (всего {len(voices)}):\n\n"
-        "💡 <b>Примечание:</b> При создании видео вам будут показаны только голоса, "
-        "подходящие для выбранного персонажа (по полу и возрасту).",
-        parse_mode="HTML",
-        reply_markup=voice_settings_menu()
+        "📝 Напишите сообщение обратной связи одним следующим сообщением.\n"
+        "Мы получим его и ответим через бота.",
+        reply_markup=back_to_main_menu()
     )
+    await state.set_state(Feedback.waiting_message)
     await c.answer()
 
-@dp.callback_query(F.data == "stats")
-async def show_stats(c: CallbackQuery):
-    credits = get_credits(c.from_user.id)
-    await c.message.edit_text(
-        f"📊 <b>Ваша статистика</b>\n\n"
-        f"💰 Кредиты: {credits}\n"
-        f"🎬 Создано видео: 0\n"
-        f"📅 Регистрация: недавно\n\n"
-        f"Статистика обновляется в реальном времени.",
-        parse_mode="HTML",
-        reply_markup=settings_menu()
+@dp.message(F.chat.type == "private", F.text, Feedback.waiting_message)
+async def on_feedback_message(m: Message, state: FSMContext):
+    ADMIN_FEEDBACK_CHAT_ID = int(os.getenv("ADMIN_FEEDBACK_CHAT_ID", "0"))
+    if ADMIN_FEEDBACK_CHAT_ID == 0:
+        return await m.answer("⚠️ Обратная связь временно недоступна.")
+    user = m.from_user
+    uname = f"@{user.username}" if user.username else "-"
+    full = f"{user.first_name or ''} {user.last_name or ''}".strip()
+    text_to_admin = (
+        "📩 Новое обращение в поддержку\n"
+        f"• From tg_id: {user.id}\n"
+        f"• Имя: {full or '-'}\n"
+        f"• Username: {uname}\n"
+        "— — — — — — — — — —\n"
+        f"{m.text}"
     )
-    await c.answer()
+    try:
+        await bot.send_message(chat_id=ADMIN_FEEDBACK_CHAT_ID, text=text_to_admin)
+        await m.answer("✅ Сообщение отправлено. Мы ответим через бота.")
+    except Exception:
+        await m.answer("❌ Не удалось отправить сообщение администратору. Попробуйте позже.")
+    await state.clear()
 
-@dp.callback_query(F.data == "about")
-async def show_about(c: CallbackQuery):
-    await c.message.edit_text(
-        "ℹ️ <b>О боте</b>\n\n"
-        "🤖 <b>GenAI UGC Ads Bot</b>\n\n"
-        "Создавайте профессиональные UGC рекламные видео с помощью ИИ!\n\n"
-        "✨ <b>Возможности:</b>\n"
-        "• Генерация говорящих персонажей\n"
-        "• Синхронизация губ с аудио\n"
-        "• Различные голоса для озвучки\n"
-        "• Профессиональное качество видео\n\n"
-        "🚀 <b>Технологии:</b>\n"
-        "• Google Veo3 для генерации видео\n"
-        "• ElevenLabs для озвучки\n"
-        "• fal.ai для синхронизации губ",
-        parse_mode="HTML",
-        reply_markup=settings_menu()
-    )
-    await c.answer()
-
-@dp.callback_query(F.data == "support")
-async def show_support(c: CallbackQuery):
-    await c.message.edit_text(
-        "🆘 <b>Поддержка</b>\n\n"
-        "Если у вас возникли вопросы или проблемы:\n\n"
-        "📧 <b>Свяжитесь с нами:</b>\n"
-        "• Telegram: @your_support_username\n"
-        "• Email: support@example.com\n\n"
-        "⏰ <b>Время ответа:</b> до 24 часов\n\n"
-        "🔧 <b>Частые проблемы:</b>\n"
-        "• Видео не генерируется → проверьте кредиты\n"
-        "• Плохое качество → попробуйте другой персонаж\n"
-        "• Ошибки → перезапустите процесс",
-        parse_mode="HTML",
-        reply_markup=settings_menu()
-    )
-    await c.answer()
-
-@dp.callback_query(F.data == "model_settings")
-async def show_model_settings(c: CallbackQuery):
-    await c.message.edit_text(
-        "⚙️ <b>Настройки модели</b>\n\n"
-        "🔧 <b>Текущие настройки:</b>\n"
-        "• Модель видео: Google Veo3\n"
-        "• Качество: Высокое\n"
-        "• Формат: 9:16 (вертикальное)\n"
-        "• Длительность: 6 секунд\n\n"
-        "⚡ <b>Производительность:</b>\n"
-        "• Время генерации: 2-3 минуты\n"
-        "• Размер файла: ~5-10 МБ\n\n"
-        "Настройки оптимизированы для лучшего качества.",
-        parse_mode="HTML",
-        reply_markup=bottom_navigation_menu()
-    )
-    await c.answer()
+# Удалены: экраны настроек/о боте/поддержка/модель, замещены обратной связью
 
 @dp.callback_query(F.data == "profile")
 async def show_profile(c: CallbackQuery):
@@ -1306,6 +1234,66 @@ async def back_to_main(c: CallbackQuery, state: FSMContext):
     )
     await state.clear()
     await c.answer()
+
+# --- Command shortcuts ---
+@dp.message(Command("main"))
+async def open_main_menu(m: Message, state: FSMContext):
+    await state.clear()
+    await m.answer(
+        "🤖 Главное меню:",
+        reply_markup=main_menu()
+    )
+
+@dp.message(Command("create_ads"))
+async def open_create_ads(m: Message, state: FSMContext):
+    await state.clear()
+    await m.answer(
+        "🎬 <b>Создание UGC рекламы</b>\n\n"
+        "Выбери один из вариантов:",
+        parse_mode="HTML",
+        reply_markup=ugc_start_menu()
+    )
+
+@dp.message(Command("credits"))
+async def open_credits(m: Message):
+    from sqlalchemy import select
+    from tg_bot.db import SessionLocal
+    from tg_bot.models import User, CreditLog
+    cts = get_credits(m.from_user.id)
+    with SessionLocal() as db:
+        user = db.scalar(select(User).where(User.tg_id == m.from_user.id))
+        if user:
+            logs = db.execute(
+                select(CreditLog)
+                .where(CreditLog.user_id == user.id)
+                .order_by(CreditLog.created_at.desc())
+                .limit(5)
+            ).scalars().all()
+        else:
+            logs = []
+    history_text = ""
+    if logs:
+        history_text = "\n\n📊 <b>Последние операции:</b>\n"
+        for log in logs:
+            sign = "+" if log.delta > 0 else ""
+            emoji = "📈" if log.delta > 0 else "📉"
+            reason_map = {
+                "signup_bonus": "Бонус при регистрации",
+                "ugc_video_creation": "Генерация UGC видео",
+                "refund_ugc_fail": "Возврат (ошибка)",
+                "admin_add": "Начислено администратором"
+            }
+            reason_text = reason_map.get(log.reason, log.reason)
+            history_text += f"{emoji} {sign}{log.delta} — {reason_text}\n"
+    await m.answer(
+        f"💰 <b>Баланс кредитов</b>\n\n"
+        f"У тебя сейчас: <b>{cts} кредитов</b>\n\n"
+        f"💡 <b>Стоимость услуг:</b>\n"
+        f"• Генерация UGC видео: {COST_UGC_VIDEO} кредит"
+        f"{history_text}",
+        parse_mode="HTML",
+        reply_markup=credits_menu()
+    )
 
 @dp.callback_query(F.data == "back_to_ugc")
 async def back_to_ugc(c: CallbackQuery, state: FSMContext):

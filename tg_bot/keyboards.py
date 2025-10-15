@@ -19,7 +19,7 @@ def main_menu():
         # Второй ряд - дополнительная информация
         [
             InlineKeyboardButton(text="❓ FAQ", callback_data="faq"),
-            InlineKeyboardButton(text="⚙️ Настройки", callback_data="settings")
+            InlineKeyboardButton(text="✉️ Обратная связь", callback_data="feedback")
         ]
     ])
 
@@ -200,6 +200,13 @@ def credits_menu():
     """Меню раздела кредитов: пополнение и назад"""
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💳 Пополнить счёт", callback_data="topup_request")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")],
+    ])
+
+def feedback_menu():
+    """Меню обратной связи"""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📝 Написать обратную связь", callback_data="feedback_write")],
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")],
     ])
 
