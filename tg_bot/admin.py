@@ -13,6 +13,7 @@ from tg_bot.models import User, CreditLog
 ADMIN_TG_IDS = set(int(x) for x in os.getenv("ADMIN_TG_IDS", "").split(',') if x.strip())
 RATE_LIMIT_WINDOW_SEC = int(os.getenv("ADMIN_RATE_LIMIT_WINDOW_SEC", "10"))
 RATE_LIMIT_MAX_OPS = int(os.getenv("ADMIN_RATE_LIMIT_MAX_OPS", "5"))
+ADMIN_FEEDBACK_CHAT_ID = int(os.getenv("ADMIN_FEEDBACK_CHAT_ID", "0"))
 
 _admin_ops: dict[int, list[float]] = {}
 
@@ -134,5 +135,29 @@ def setup_admin(dp):
             return await m.answer("История пуста")
         lines = [f"{'+' if l.delta>0 else ''}{l.delta} | {l.reason} | {l.created_at}" for l in logs]
         await m.answer("Последние операции:\n" + "\n".join(lines))
+
+    @dp.message(Command("reply"))
+    @rate_limited
+    async def admin_reply(m: Message):
+        # Проверяем, что сообщение из ADMIN_FEEDBACK_CHAT_ID
+        if str(m.chat.id) != str(ADMIN_FEEDBACK_CHAT_ID):
+            return
+        
+        # Проверяем, что отправитель в списке админов
+        if not (m.from_user and is_admin(m.from_user.id)):
+            return
+        
+        parts = (m.text or "").split(maxsplit=2)
+        if len(parts) < 3 or not parts[1].isdigit():
+            return await m.answer("Использование: /reply <tg_id> <text>")
+        
+        target_id = int(parts[1])
+        reply_text = parts[2]
+        
+        try:
+            await bot.send_message(chat_id=target_id, text=f"🛠 Ответ поддержки:\n{reply_text}")
+            await m.answer("✅ Ответ отправлен.")
+        except Exception:
+            await m.answer("❌ Не удалось доставить сообщение пользователю.")
 
 
