@@ -382,6 +382,8 @@ async def show_faq(c: CallbackQuery):
 # --- UGC Creation Flow ---
 @dp.callback_query(F.data == "create_ugc")
 async def start_ugc_creation(c: CallbackQuery):
+    # Гарантируем, что пользователь и его состояние существуют
+    ensure_user(c.from_user.id)
     await c.message.edit_text(
         "🎬 <b>Создание UGC-like рекламы</b>\n\n"
         "Давай выберем походящего персонажа для вашей рекламы:",
@@ -404,6 +406,7 @@ async def create_character(c: CallbackQuery):
 @dp.callback_query(F.data == "select_character")
 async def select_character(c: CallbackQuery, state: FSMContext):
     """Начать процесс выбора персонажа - сначала выбор пола"""
+    ensure_user(c.from_user.id)
     await c.message.edit_text(
         "👤 <b>Выбор персонажа</b>\n\n"
         "Сначала выбери пол персонажа:",
@@ -418,6 +421,7 @@ async def select_character(c: CallbackQuery, state: FSMContext):
 @dp.callback_query(F.data == "gender_male")
 async def gender_male_selected(c: CallbackQuery, state: FSMContext):
     """Пользователь выбрал мужской пол"""
+    ensure_user(c.from_user.id)
     set_character_gender(c.from_user.id, "male")
     print(f"User {c.from_user.id} выбрал пол: мужской")
     
@@ -433,6 +437,7 @@ async def gender_male_selected(c: CallbackQuery, state: FSMContext):
 @dp.callback_query(F.data == "gender_female")
 async def gender_female_selected(c: CallbackQuery, state: FSMContext):
     """Пользователь выбрал женский пол"""
+    ensure_user(c.from_user.id)
     set_character_gender(c.from_user.id, "female")
     print(f"User {c.from_user.id} выбрал пол: женский")
     
@@ -448,6 +453,7 @@ async def gender_female_selected(c: CallbackQuery, state: FSMContext):
 @dp.callback_query(F.data == "age_young")
 async def age_young_selected(c: CallbackQuery, state: FSMContext):
     """Пользователь выбрал молодой возраст"""
+    ensure_user(c.from_user.id)
     set_character_age(c.from_user.id, "young")
     set_character_page(c.from_user.id, 0)  # Сбрасываем страницу
     print(f"User {c.from_user.id} выбрал возраст: молодой")
@@ -459,6 +465,7 @@ async def age_young_selected(c: CallbackQuery, state: FSMContext):
 @dp.callback_query(F.data == "age_elderly")
 async def age_elderly_selected(c: CallbackQuery, state: FSMContext):
     """Пользователь выбрал пожилой возраст"""
+    ensure_user(c.from_user.id)
     set_character_age(c.from_user.id, "elderly")
     set_character_page(c.from_user.id, 0)  # Сбрасываем страницу
     print(f"User {c.from_user.id} выбрал возраст: пожилой")
@@ -570,6 +577,7 @@ async def show_voice_gallery(c: CallbackQuery, state: FSMContext):
 @dp.callback_query(F.data.startswith("char_page:"))
 async def character_page_changed(c: CallbackQuery, state: FSMContext):
     """Пользователь переключил страницу персонажей"""
+    ensure_user(c.from_user.id)
     page = int(c.data.split(":", 1)[1])
     set_character_page(c.from_user.id, page)
     print(f"User {c.from_user.id} переключил на страницу {page}")
@@ -633,6 +641,7 @@ async def back_to_age(c: CallbackQuery, state: FSMContext):
 @dp.callback_query(F.data.startswith("char_pick:"))
 async def character_picked(c: CallbackQuery, state: FSMContext):
     """Пользователь выбрал конкретного персонажа"""
+    ensure_user(c.from_user.id)
     idx = int(c.data.split(":", 1)[1])
     gender = get_character_gender(c.from_user.id)
     age = get_character_age(c.from_user.id)
@@ -659,6 +668,7 @@ async def character_picked(c: CallbackQuery, state: FSMContext):
 @dp.callback_query(F.data.startswith("voice_pick:"))
 async def voice_picked(c: CallbackQuery, state: FSMContext):
     """Пользователь выбрал конкретный голос"""
+    ensure_user(c.from_user.id)
     idx = int(c.data.split(":", 1)[1])
     gender = get_character_gender(c.from_user.id)
     age = get_character_age(c.from_user.id)
