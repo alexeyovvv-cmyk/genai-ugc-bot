@@ -48,6 +48,7 @@ from tg_bot.utils.user_state import (
     set_last_audio,
     get_last_audio,
 )
+from tg_bot.utils.statistics import track_user_activity
 
 # Функции для сохранения параметров персонажа
 def set_character_gender(tg_id: int, gender: str):
@@ -204,6 +205,14 @@ try:
 except Exception as e:
     print(f"⚠️  Admin module not initialized: {e}")
 
+# Initialize scheduler for daily statistics
+try:
+    from tg_bot.services.scheduler_service import setup_scheduler
+    scheduler = setup_scheduler(bot)
+    print("✅ Statistics scheduler initialized")
+except Exception as e:
+    print(f"⚠️  Statistics scheduler not initialized: {e}")
+
 # Выборы пользователя и путь к последнему аудио теперь сохраняются в БД
 
 @dp.startup()
@@ -229,6 +238,16 @@ async def on_startup():
                 ADD COLUMN IF NOT EXISTS character_page INTEGER DEFAULT 0,
                 ADD COLUMN IF NOT EXISTS selected_voice_idx INTEGER,
                 ADD COLUMN IF NOT EXISTS voice_page INTEGER DEFAULT 0;
+                
+                -- Create user_activity table if it doesn't exist
+                CREATE TABLE IF NOT EXISTS user_activity (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL REFERENCES users(id),
+                    last_activity_date VARCHAR NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+                
+                CREATE INDEX IF NOT EXISTS idx_user_activity_user_id ON user_activity(user_id);
                 """
                 conn.execute(text(migration_sql))
                 conn.commit()
@@ -276,6 +295,7 @@ async def on_startup():
 @dp.message(CommandStart())
 async def cmd_start(m: Message):
     ensure_user(m.from_user.id)
+    track_user_activity(m.from_user.id)  # Отслеживаем активность пользователя
     current_credits = get_credits(m.from_user.id)
     await m.answer(
         "🎬 <b>Добро пожаловать в сервис Datanauts.AI</b>\n\n"
@@ -667,6 +687,7 @@ async def voice_picked(c: CallbackQuery, state: FSMContext):
     await c.message.answer(
         f"✅ Отлично! Выбран голос #{idx+1}: {name}\n\n"
         "📝 Теперь напиши текст, который должен сказать персонаж.\n\n"
+        "💡 Рекомендация: ставь точку или другой знак в конце предложения — так речь звучит естественнее.\n\n"
         "⚠️ <b>Важно:</b> Текст должен быть таким, чтобы озвучка заняла не более 15 секунд!\n\n"
         "Например: 'Привет! Попробуй наш новый продукт со скидкой 20%!'",
         parse_mode="HTML",

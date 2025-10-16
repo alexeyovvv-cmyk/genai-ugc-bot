@@ -48,3 +48,10 @@ class UserState(Base):
     voice_page: Mapped[Optional[int]] = mapped_column(Integer, default=0)  # текущая страница голосов
     created_at: Mapped[str] = mapped_column(DateTime, server_default=func.now())
     # updated_at можно добавить позже триггером, пока не требуется
+
+class UserActivity(Base):
+    __tablename__ = "user_activity"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    last_activity_date: Mapped[str] = mapped_column(String)  # DATE as string YYYY-MM-DD
+    created_at: Mapped[str] = mapped_column(DateTime, server_default=func.now())

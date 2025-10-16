@@ -164,4 +164,71 @@ def setup_admin(dp, bot_instance):
             print(f"[ADMIN_REPLY] Error sending message to {target_id}: {error_details}")
             traceback.print_exc()
 
+    @dp.message(Command("stats"))
+    @rate_limited
+    async def stats_command(m: Message):
+        print(f"[ADMIN_STATS] Stats command received from user {m.from_user.id if m.from_user else 'unknown'}")
+        print(f"[ADMIN_STATS] Chat ID: {m.chat.id}, Expected: {ADMIN_FEEDBACK_CHAT_ID}")
+        
+        # Проверяем, что сообщение из ADMIN_FEEDBACK_CHAT_ID
+        if str(m.chat.id) != str(ADMIN_FEEDBACK_CHAT_ID):
+            print(f"[ADMIN_STATS] ❌ REJECTED: Message not from admin feedback chat")
+            return
+        
+        # Проверяем, что отправитель в списке админов
+        if not (m.from_user and is_admin(m.from_user.id)):
+            print(f"[ADMIN_STATS] ❌ REJECTED: User {m.from_user.id if m.from_user else 'unknown'} is not admin")
+            return
+        
+        print(f"[ADMIN_STATS] ✅ User {m.from_user.id} is authorized, generating statistics...")
+        
+        try:
+            print("[ADMIN_STATS] Importing statistics module...")
+            from tg_bot.utils.statistics import generate_statistics_report
+            
+            print("[ADMIN_STATS] Generating statistics report...")
+            report = generate_statistics_report()
+            print(f"[ADMIN_STATS] Report generated successfully (length: {len(report)} chars)")
+            
+            print("[ADMIN_STATS] Sending report to admin...")
+            await m.answer(report, parse_mode="HTML")
+            print(f"[ADMIN_STATS] ✅ Statistics report sent successfully to admin {m.from_user.id}")
+            
+        except ImportError as ie:
+            error_msg = f"[ADMIN_STATS] ❌ IMPORT ERROR: Could not import statistics module: {ie}"
+            print(error_msg)
+            await m.answer(
+                f"❌ <b>Ошибка импорта модуля статистики</b>\n\n"
+                f"🔍 <b>Тип ошибки:</b> ImportError\n"
+                f"📝 <b>Сообщение:</b> {str(ie)}\n\n"
+                f"💡 <b>Решение:</b> Проверьте, что файл tg_bot/utils/statistics.py существует и не содержит синтаксических ошибок.",
+                parse_mode="HTML"
+            )
+        except Exception as e:
+            error_msg = f"[ADMIN_STATS] ❌ CRITICAL ERROR: {type(e).__name__}: {str(e)}"
+            print(error_msg)
+            print(f"[ADMIN_STATS] Full traceback:")
+            import traceback
+            traceback.print_exc()
+            
+            # Отправляем детальный отчет об ошибке
+            error_report = f"""❌ <b>Ошибка при получении статистики</b>
+
+🔍 <b>Тип ошибки:</b> {type(e).__name__}
+📝 <b>Сообщение:</b> {str(e)}
+👤 <b>Админ:</b> {m.from_user.id if m.from_user else 'unknown'}
+🕐 <b>Время:</b> {os.getenv('TZ', 'UTC')}
+
+📋 <b>Детали ошибки:</b>
+<code>{traceback.format_exc()}</code>
+
+💡 <b>Возможные причины:</b>
+• Проблемы с подключением к базе данных
+• Ошибки в SQL запросах
+• Проблемы с часовыми поясами
+• Отсутствующие зависимости"""
+            
+            await m.answer(error_report, parse_mode="HTML")
+            print(f"[ADMIN_STATS] Detailed error report sent to admin {m.from_user.id if m.from_user else 'unknown'}")
+
 
