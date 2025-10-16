@@ -629,6 +629,10 @@ async def character_picked(c: CallbackQuery, state: FSMContext):
     set_voice_page(c.from_user.id, 0)  # Сбрасываем страницу голосов
     print(f"User {c.from_user.id} выбрал персонажа #{idx+1} ({gender}, {age})")
     
+    # Подтверждаем выбор пользователю: сообщение и изображение выбранного персонажа
+    await c.message.answer(f"✅ Вы выбрали персонажа #{idx+1}")
+    await c.message.answer_photo(FSInputFile(character_image))
+    
     # Показываем галерею голосов для выбранного персонажа
     await show_voice_gallery(c, state)
 
@@ -1238,7 +1242,10 @@ async def back_to_main(c: CallbackQuery, state: FSMContext):
 async def open_main_menu(m: Message, state: FSMContext):
     await state.clear()
     await m.answer(
-        "🤖 Главное меню:",
+        "🤖 <b>Главное меню:</b>"
+        "Создавайте десятки UGC-like рекламных роликов за считанные минуты с помощью ИИ.\n\n"
+        "Выберите действие:",
+        parse_mode="HTML",
         reply_markup=main_menu()
     )
 

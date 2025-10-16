@@ -41,10 +41,22 @@ def list_voice_samples(gender: str = None, age: str = None, page: int = 0, limit
         result: List[Tuple[str, str, str]] = []
         for p in paths:
             fname = pathlib.Path(p).stem
+            # Поддерживаем два формата именования:
+            # 1) "Name__<voice_id>" — старый формат с двойным подчеркиванием
+            # 2) "Name_<voice_id>" — новый формат с одиночным подчеркиванием
             if "__" in fname:
                 name, voice_id = fname.split("__", 1)
             else:
-                name, voice_id = fname, fname
+                # Пробуем отделить voice_id по последнему '_' если правая часть похожа на ID
+                if "_" in fname:
+                    name_part, maybe_id = fname.rsplit("_", 1)
+                    # Heuristics: ID обычно длинная последовательность [A-Za-z0-9] (>=16 символов)
+                    if maybe_id.isalnum() and len(maybe_id) >= 16:
+                        name, voice_id = name_part, maybe_id
+                    else:
+                        name, voice_id = fname, fname
+                else:
+                    name, voice_id = fname, fname
             result.append((name, voice_id, p))
         
         # Применяем пагинацию
