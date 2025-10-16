@@ -1,6 +1,7 @@
 # main.py — точка входа бота
 import asyncio, os, pathlib
 from dotenv import load_dotenv
+from tg_bot.config import BASE_DIR, DATABASE_URL, ensure_dirs
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, CallbackQuery, FSInputFile, InputMediaPhoto, InputMediaAudio
 from aiogram.filters import CommandStart, Command
@@ -187,14 +188,9 @@ if not TELEGRAM_BOT_TOKEN:
     raise ValueError("TELEGRAM_BOT_TOKEN environment variable is required")
 
 print(f"✅ Bot token found: {TELEGRAM_BOT_TOKEN[:10]}...")
-
-base_dir_env = os.getenv("BASE_DIR")
-if base_dir_env is None:
-    print("⚠️  Warning: BASE_DIR is not set in environment. Using current directory as BASE_DIR.")
-    BASE_DIR = pathlib.Path(".")
-else:
-    BASE_DIR = pathlib.Path(base_dir_env)
-    print(f"✅ BASE_DIR: {BASE_DIR}")
+ensure_dirs()
+print(f"✅ BASE_DIR resolved to: {BASE_DIR}")
+print(f"✅ DATABASE_URL: {DATABASE_URL}")
 
 bot = Bot(token=TELEGRAM_BOT_TOKEN)
 dp = Dispatcher()

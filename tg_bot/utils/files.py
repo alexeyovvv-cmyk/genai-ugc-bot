@@ -2,8 +2,9 @@
 import pathlib, glob
 from typing import List, Tuple, Optional
 
+from tg_bot.config import BASE_DIR
 # Структура персонажей
-CHARACTERS_DIR = pathlib.Path("data/characters")
+CHARACTERS_DIR = BASE_DIR / "data" / "characters"
 
 def list_character_images(gender: str, age: str, page: int = 0, limit: int = 5) -> Tuple[List[str], bool]:
     """

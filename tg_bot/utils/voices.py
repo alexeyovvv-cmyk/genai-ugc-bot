@@ -2,8 +2,9 @@ import glob
 import pathlib
 from typing import List, Tuple, Optional
 
+from tg_bot.config import BASE_DIR
 
-VOICES_DIR = pathlib.Path("data/audio/voices")
+VOICES_DIR = BASE_DIR / "data" / "audio" / "voices"
 
 
 def list_voice_samples(gender: str = None, age: str = None, page: int = 0, limit: int = 5) -> Tuple[List[Tuple[str, str, str]], bool]:
