@@ -2,14 +2,14 @@
 
 from typing import Optional
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-from sqlalchemy import String, Integer, DateTime, ForeignKey, JSON, func
+from sqlalchemy import String, Integer, DateTime, ForeignKey, JSON, func, BigInteger
 
 class Base(DeclarativeBase): pass
 
 class User(Base):
     __tablename__ = "users"
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    tg_id: Mapped[int] = mapped_column(unique=True, index=True)
+    tg_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True)
     credits: Mapped[int] = mapped_column(Integer, default=3)
     selected_voice_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     created_at: Mapped[str] = mapped_column(DateTime, server_default=func.now())

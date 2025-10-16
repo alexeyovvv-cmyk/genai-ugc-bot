@@ -244,18 +244,6 @@ async def on_startup():
                 );
                 
                 CREATE INDEX IF NOT EXISTS idx_user_activity_user_id ON user_activity(user_id);
-
-                -- Ensure users.tg_id can store large Telegram IDs
-                DO $$
-                BEGIN
-                    IF EXISTS (
-                        SELECT 1 FROM information_schema.columns
-                        WHERE table_name = 'users' AND column_name = 'tg_id' AND udt_name = 'int4'
-                    ) THEN
-                        ALTER TABLE users
-                        ALTER COLUMN tg_id TYPE BIGINT USING tg_id::bigint;
-                    END IF;
-                END$$;
                 """
                 conn.execute(text(migration_sql))
                 conn.commit()
