@@ -4,8 +4,9 @@ import pathlib
 # Resolve BASE_DIR from env or default to current working directory
 BASE_DIR = pathlib.Path(os.getenv("BASE_DIR", ".")).resolve()
 
-# Prefer DATABASE_URL_PROD from env; otherwise use sqlite file under BASE_DIR
-DATABASE_URL = os.getenv("DATABASE_URL_PROD") or f"sqlite:///{(BASE_DIR / 'genai.db').as_posix()}"
+# Prefer DATABASE_URL_TEST from env; otherwise use sqlite file under BASE_DIR
+# Для тестового бота используем отдельную БД
+DATABASE_URL = os.getenv("DATABASE_URL_TEST") or f"sqlite:///{(BASE_DIR / 'genai_test.db').as_posix()}"
 
 
 def ensure_dirs() -> None:
