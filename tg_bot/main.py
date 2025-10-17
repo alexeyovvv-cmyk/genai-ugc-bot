@@ -306,7 +306,7 @@ async def cmd_start(m: Message):
     track_user_activity(m.from_user.id)  # Отслеживаем активность пользователя
     current_credits = get_credits(m.from_user.id)
     await m.answer(
-        "🎬 <b>Добро пожаловать в сервис Datanauts.AI</b>\n\n"
+        "🎬 <b>Добро пожаловать в сервис Datanauts.io</b>\n\n"
         "Создавайте десятки UGC-like рекламных роликов за считанные минуты с помощью ИИ.\n"
         f"У тебя сейчас: <b>{current_credits} кредитов</b>.\n\n"
         "Выберите действие:",
