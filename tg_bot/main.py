@@ -1367,9 +1367,9 @@ async def main():
             print(f"Setting webhook to: {webhook_url}")
         else:
             # Railway doesn't provide RAILWAY_PUBLIC_DOMAIN anymore
-            # Use hardcoded URL as fallback
-            webhook_url = "https://datanauts-bot.railway.app/webhook"
-            print(f"RAILWAY_PUBLIC_DOMAIN not found, using fallback: {webhook_url}")
+            # Use correct Railway URL
+            webhook_url = "https://datanauts-ugc-bot.railway.app/webhook"
+            print(f"RAILWAY_PUBLIC_DOMAIN not found, using Railway URL: {webhook_url}")
         
         try:
             # Ensure old webhook (if any) is removed first to avoid conflicts
