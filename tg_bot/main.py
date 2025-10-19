@@ -1357,6 +1357,7 @@ async def main():
     
     # Railway always sets PORT for web services
     if port:
+        print("🚀 Railway mode detected - using webhook")
         # Railway/Production mode: use webhook
         from aiohttp import web
         
