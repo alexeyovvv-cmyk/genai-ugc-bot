@@ -1410,15 +1410,9 @@ async def main():
         # Keep running
         await asyncio.Event().wait()
     else:
-        # Local mode: use polling
-        print("Starting in polling mode (local development)")
-        # Ensure webhook is removed to avoid conflict with getUpdates
-        try:
-            await bot.delete_webhook(drop_pending_updates=True)
-            print("✅ Deleted webhook before starting polling")
-        except Exception as del_err:
-            print(f"⚠️  Failed to delete webhook before polling: {del_err}")
-        await dp.start_polling(bot)
+        # No PORT found - this should not happen on Railway
+        print("❌ PORT environment variable not found. This bot requires Railway deployment.")
+        raise RuntimeError("Bot must run on Railway platform")
 
 if __name__ == "__main__":
     asyncio.run(main())
