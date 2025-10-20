@@ -55,7 +55,7 @@ def age_selection_menu():
     """Меню выбора возраста персонажа"""
     return InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="🧒 Молодой (18-25)", callback_data="age_young"),
+            InlineKeyboardButton(text="🧒 Молодой", callback_data="age_young"),
             InlineKeyboardButton(text="👴 Пожилой (50+)", callback_data="age_elderly")
         ],
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_gender")]
