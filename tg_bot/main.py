@@ -1258,6 +1258,7 @@ async def show_profile(c: CallbackQuery):
 @dp.callback_query(F.data == "back_previous")
 async def back_previous(c: CallbackQuery):
     """Возврат к предыдущему меню"""
+    current_credits = get_credits(c.from_user.id)
     await c.message.edit_text(
        "🎬 <b>Добро пожаловать в сервис Datanauts.co</b>\n\n"
         "Создавайте десятки UGC-like рекламных роликов за считанные минуты с помощью ИИ.\n"
@@ -1271,6 +1272,7 @@ async def back_previous(c: CallbackQuery):
 # --- Navigation ---
 @dp.callback_query(F.data == "back_to_main")
 async def back_to_main(c: CallbackQuery, state: FSMContext):
+    current_credits = get_credits(c.from_user.id)
     await c.message.edit_text(
         "🎬 <b>Добро пожаловать в сервис Datanauts.co</b>\n\n"
         "Создавайте десятки UGC-like рекламных роликов за считанные минуты с помощью ИИ.\n"
@@ -1286,6 +1288,7 @@ async def back_to_main(c: CallbackQuery, state: FSMContext):
 @dp.message(Command("main"))
 async def open_main_menu(m: Message, state: FSMContext):
     await state.clear()
+    current_credits = get_credits(m.from_user.id)
     await m.answer(
        "🎬 <b>Добро пожаловать в сервис Datanauts.co</b>\n\n"
         "Создавайте десятки UGC-like рекламных роликов за считанные минуты с помощью ИИ.\n"
