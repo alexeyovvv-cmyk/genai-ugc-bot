@@ -22,7 +22,7 @@ logger = setup_logger(__name__)
 from tg_bot.dispatcher import dp
 
 
-@dp.message(CommandStart)
+@dp.message(Command("start"))
 async def cmd_start(m: Message):
     """Handle /start command"""
     logger.info(f"🔴 START: Получена команда /start от пользователя {m.from_user.id}")
