@@ -598,12 +598,46 @@ async def show_voice_gallery(c: CallbackQuery, state: FSMContext):
     media = []
     for idx, (name, voice_id, audio_path) in enumerate(voices):
         global_index = page * 5 + idx
-        media.append(
-            InputMediaAudio(
-                media=FSInputFile(audio_path)
+        
+        # Проверяем, является ли путь R2 ключом или локальным путем
+        if audio_path.startswith('presets/'):
+            # Это R2 ключ, нужно скачать файл или использовать presigned URL
+            from tg_bot.services.r2_service import download_file
+            import tempfile
+            import os
+            
+            # Создаем временный файл
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as temp_file:
+                temp_path = temp_file.name
+            
+            # Скачиваем файл из R2
+            if download_file(audio_path, temp_path):
+                media.append(
+                    InputMediaAudio(
+                        media=FSInputFile(temp_path)
+                    )
+                )
+            else:
+                print(f"Failed to download R2 file: {audio_path}")
+                continue
+        else:
+            # Это локальный путь
+            media.append(
+                InputMediaAudio(
+                    media=FSInputFile(audio_path)
+                )
             )
-        )
-    await c.message.answer_media_group(media)
+    
+    if media:
+        await c.message.answer_media_group(media)
+        
+        # Очищаем временные файлы
+        for item in media:
+            if hasattr(item.media, 'path') and item.media.path.startswith('/tmp'):
+                try:
+                    os.unlink(item.media.path)
+                except:
+                    pass
     
     # Отправляем меню с навигацией
     await c.message.answer(
