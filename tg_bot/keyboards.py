@@ -82,7 +82,7 @@ def character_gallery_menu(page: int, has_next: bool, total_count: int):
     if page > 0:
         nav_buttons.append(InlineKeyboardButton(text="⬅️ Предыдущая", callback_data=f"char_page:{page-1}"))
     if has_next:
-        nav_buttons.append(InlineKeyboardButton(text="Следующая ➡️", callback_data=f"char_page:{page+1}"))
+        nav_buttons.append(InlineKeyboardButton(text="Следующая страница ➡️", callback_data=f"char_page:{page+1}"))
     if nav_buttons:
         buttons.append(nav_buttons)
 
@@ -141,7 +141,7 @@ def voice_gallery_menu(page: int, has_next: bool, total_count: int):
     if page > 0:
         nav_buttons.append(InlineKeyboardButton(text="⬅️ Предыдущая", callback_data=f"voice_page:{page-1}"))
     if has_next:
-        nav_buttons.append(InlineKeyboardButton(text="Следующая ➡️", callback_data=f"voice_page:{page+1}"))
+        nav_buttons.append(InlineKeyboardButton(text="Следующая страница ➡️", callback_data=f"voice_page:{page+1}"))
     if nav_buttons:
         buttons.append(nav_buttons)
 

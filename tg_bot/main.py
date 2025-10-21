@@ -1371,15 +1371,13 @@ async def main():
         # Railway/Production mode: use webhook
         from aiohttp import web
         
-        # Construct webhook URL from Railway public domain
-        if railway_public_domain:
-            webhook_url = f"https://{railway_public_domain}/webhook"
-            print(f"Setting webhook to: {webhook_url}")
-        else:
-            # Railway doesn't provide RAILWAY_PUBLIC_DOMAIN anymore
-            # Use correct Railway URL
-            webhook_url = "https://datanauts-ugc-bot-production.up.railway.app/webhook"
-            print(f"RAILWAY_PUBLIC_DOMAIN not found, using Railway URL: {webhook_url}")
+           # Get webhook URL from environment variable
+           webhook_url = os.getenv("WEBHOOK_URL")
+           if not webhook_url:
+               print("❌ WEBHOOK_URL environment variable not found")
+               raise RuntimeError("WEBHOOK_URL environment variable is required")
+           
+           print(f"Setting webhook to: {webhook_url}")
         
         try:
             # Ensure old webhook (if any) is removed first to avoid conflicts
