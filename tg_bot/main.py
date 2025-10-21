@@ -429,24 +429,40 @@ async def show_my_generations(c: CallbackQuery):
             )
             return await c.answer()
         
-        # Формируем сообщение с историей
-        message_text = "📁 <b>Мои генерации</b>\n\n"
+        # Отправляем список с ссылками на видео
+        message_text = f"📁 <b>Мои генерации</b>\n\nНайдено: {len(generations)} видео\n\n"
         
         for i, gen in enumerate(generations, 1):
             created_at = gen['created_at'].strftime('%d.%m.%Y %H:%M')
             character_info = f"{gen['character_gender']}/{gen['character_age']}" if gen['character_gender'] else "Неизвестно"
             
-            message_text += f"{i}. <b>{created_at}</b>\n"
-            message_text += f"   👤 Персонаж: {character_info}\n"
+            message_text += f"🎥 <b>Видео #{i}</b>\n"
+            message_text += f"📅 {created_at}\n"
+            message_text += f"👤 Персонаж: {character_info}\n"
+            message_text += f"💰 Потрачено: {gen['credits_spent']} кредит(ов)\n"
+            
             if gen['text_prompt']:
-                message_text += f"   💬 Текст: {gen['text_prompt'][:50]}{'...' if len(gen['text_prompt']) > 50 else ''}\n"
-            message_text += f"   💰 Потрачено: {gen['credits_spent']} кредит(ов)\n\n"
+                message_text += f"💬 Текст: {gen['text_prompt'][:50]}{'...' if len(gen['text_prompt']) > 50 else ''}\n"
+            
+            if gen['has_video'] and gen['video_url']:
+                message_text += f"🔗 <a href='{gen['video_url']}'>Скачать видео</a>\n"
+            else:
+                message_text += "❌ Видео недоступно\n"
+            
+            message_text += "\n"
         
         # Добавляем статистику
         stats = get_user_storage_stats(user_id)
         message_text += f"📊 <b>Статистика:</b>\n"
-        message_text += f"   Всего генераций: {stats['total_generations']}\n"
-        message_text += f"   Потрачено кредитов: {stats['total_credits_spent']}\n"
+        message_text += f"Всего генераций: {stats['total_generations']}\n"
+        message_text += f"Потрачено кредитов: {stats['total_credits_spent']}\n"
+        
+        # Добавляем инструкцию
+        message_text += f"\n💡 <b>Как скачать:</b>\n"
+        message_text += f"• Нажмите на ссылку 'Скачать видео'\n"
+        message_text += f"• Видео откроется в браузере\n"
+        message_text += f"• Нажмите 'Скачать' в браузере\n"
+        message_text += f"• Ссылки действительны 24 часа"
         
         await c.message.answer(
             message_text,
