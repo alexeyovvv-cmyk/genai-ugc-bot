@@ -924,11 +924,23 @@ async def audio_confirmed(c: CallbackQuery, state: FSMContext):
         log(f"[UGC] Аудио файл: {audio_path}")
         
         try:
-            video_path = await generate_talking_head_video(
+            video_result = await generate_talking_head_video(
                 audio_path=audio_path,
-                image_path=selected_frame
+                image_path=selected_frame,
+                user_id=c.from_user.id
             )
+            
+            if not video_result:
+                raise Exception("Не удалось сгенерировать видео")
+            
+            video_path = video_result['local_path']
+            video_url = video_result.get('video_url')
+            r2_video_key = video_result.get('r2_video_key')
+            # r2_audio_key всегда None - аудио включено в MP4
+            
             log(f"[UGC] Видео сгенерировано: {video_path}")
+            if r2_video_key:
+                log(f"[UGC] Видео сохранено в R2: {r2_video_key}")
         except Exception as video_error:
             log(f"[UGC] ❌ Ошибка при генерации видео: {video_error}")
             import traceback
@@ -942,11 +954,19 @@ async def audio_confirmed(c: CallbackQuery, state: FSMContext):
             await c.message.answer("✅ Отправляю готовое видео...")
             log(f"[UGC] Отправляем видео пользователю...")
             
-            await c.message.answer_video(
-                FSInputFile(video_path), 
-                caption=f"🎉 Твоя UGC реклама готова!\n\n(-{COST_UGC_VIDEO} кредит списан)"
-            )
-            log(f"[UGC] ✅ Видео отправлено успешно")
+            # Отправляем видео (используем presigned URL если есть, иначе локальный файл)
+            if video_url:
+                await c.message.answer_video(
+                    video_url, 
+                    caption=f"🎉 Твоя UGC реклама готова!\n\n(-{COST_UGC_VIDEO} кредит списан)"
+                )
+                log(f"[UGC] ✅ Видео отправлено через R2 URL")
+            else:
+                await c.message.answer_video(
+                    FSInputFile(video_path), 
+                    caption=f"🎉 Твоя UGC реклама готова!\n\n(-{COST_UGC_VIDEO} кредит списан)"
+                )
+                log(f"[UGC] ✅ Видео отправлено через локальный файл")
             
             # Сохраняем генерацию в историю
             try:
@@ -954,14 +974,14 @@ async def audio_confirmed(c: CallbackQuery, state: FSMContext):
                 save_user_generation(
                     user_id=c.from_user.id,
                     generation_type='video',
-                    video_r2_key=None,  # TODO: сохранить R2 ключ после миграции
-                    audio_r2_key=None,  # TODO: сохранить R2 ключ после миграции
+                    video_r2_key=r2_video_key,
+                    audio_r2_key=None,  # Аудио включено в MP4, не сохраняем отдельно
                     character_gender=get_character_gender(c.from_user.id),
                     character_age=get_character_age(c.from_user.id),
                     text_prompt=get_character_text(c.from_user.id),
                     credits_spent=COST_UGC_VIDEO
                 )
-                log(f"[UGC] ✅ Генерация сохранена в историю")
+                log(f"[UGC] ✅ Генерация сохранена в историю с R2 ключами")
             except Exception as save_error:
                 log(f"[UGC] ⚠️ Не удалось сохранить генерацию в историю: {save_error}")
             

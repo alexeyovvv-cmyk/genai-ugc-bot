@@ -21,7 +21,7 @@ async def generate_talking_head_video(
     audio_path: str,
     image_path: str,
     user_id: Optional[int] = None,
-) -> Optional[str]:
+) -> Optional[dict]:
     """
     Generate talking head video using fal.ai OmniHuman model.
     
@@ -64,19 +64,18 @@ async def generate_talking_head_video(
                     if upload_file(video_path, r2_video_key):
                         print(f"[FALAI] ✅ Video uploaded to R2: {r2_video_key}", flush=True)
                         
-                        # Upload audio to permanent location too
-                        audio_filename = f"tts_audio_{timestamp}.mp3"
-                        r2_audio_key = f"users/{user_id}/generated_audio/{audio_filename}"
+                        # Аудио не сохраняем отдельно - оно уже включено в MP4 видео
                         
-                        print(f"[FALAI] Uploading audio to R2: {r2_audio_key}", flush=True)
-                        if upload_file(audio_path, r2_audio_key):
-                            print(f"[FALAI] ✅ Audio uploaded to R2: {r2_audio_key}", flush=True)
-                        
-                        # Return R2 presigned URL instead of local path
+                        # Return both local path and R2 keys
                         video_url = get_presigned_url(r2_video_key, expiry_hours=24)
                         if video_url:
                             print(f"[FALAI] ✅ Generated presigned URL for video", flush=True)
-                            return video_url
+                            return {
+                                'local_path': video_path,
+                                'video_url': video_url,
+                                'r2_video_key': r2_video_key,
+                                'r2_audio_key': None  # Аудио не сохраняем отдельно, оно уже в MP4
+                            }
                         else:
                             print(f"[FALAI] ⚠️ Failed to generate presigned URL, returning local path", flush=True)
                     else:
@@ -84,7 +83,12 @@ async def generate_talking_head_video(
                 except Exception as e:
                     print(f"[FALAI] ⚠️ R2 upload error: {e}", flush=True)
             
-            return video_path
+            return {
+                'local_path': video_path,
+                'video_url': None,
+                'r2_video_key': None,
+                'r2_audio_key': None  # Аудио не сохраняем отдельно
+            }
         else:
             print("[FALAI] ❌ Video generation failed", flush=True)
             return None
