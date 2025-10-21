@@ -11,6 +11,7 @@ import time
 from aiogram import F
 from aiogram.types import CallbackQuery, Message, FSInputFile
 from aiogram.fsm.context import FSMContext
+from aiogram.filters import StateFilter
 
 from tg_bot.states import UGCCreation
 from tg_bot.utils.user_state import (
@@ -68,7 +69,7 @@ async def edit_character_no(c: CallbackQuery, state: FSMContext):
     await show_voice_gallery(c, state)
 
 
-@dp.message(F.text, UGCCreation.waiting_edit_prompt)
+@dp.message(StateFilter(UGCCreation.waiting_edit_prompt), F.text)
 async def handle_edit_prompt(m: Message, state: FSMContext):
     """Обработка промпта для редактирования персонажа"""
     logger.info(f"🔴 DEBUG: handle_edit_prompt вызван для пользователя {m.from_user.id}")

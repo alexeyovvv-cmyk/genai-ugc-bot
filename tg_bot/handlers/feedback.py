@@ -9,6 +9,7 @@ import os
 from aiogram import F
 from aiogram.types import CallbackQuery, Message
 from aiogram.fsm.context import FSMContext
+from aiogram.filters import StateFilter
 
 from tg_bot.states import Feedback
 from tg_bot.keyboards import feedback_menu, back_to_main_menu
@@ -43,7 +44,7 @@ async def feedback_write(c: CallbackQuery, state: FSMContext):
     await c.answer()
 
 
-@dp.message(F.chat.type == "private", F.text, Feedback.waiting_message)
+@dp.message(StateFilter(Feedback.waiting_message), F.chat.type == "private", F.text)
 async def on_feedback_message(m: Message, state: FSMContext):
     """Handle feedback message from user"""
     ADMIN_FEEDBACK_CHAT_ID = int(os.getenv("ADMIN_FEEDBACK_CHAT_ID", "0"))

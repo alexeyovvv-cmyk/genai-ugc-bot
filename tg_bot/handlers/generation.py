@@ -13,6 +13,7 @@ import time
 from aiogram import F
 from aiogram.types import CallbackQuery, Message, FSInputFile
 from aiogram.fsm.context import FSMContext
+from aiogram.filters import StateFilter
 
 from tg_bot.states import UGCCreation
 from tg_bot.utils.credits import get_credits, spend_credits, add_credits
@@ -420,7 +421,7 @@ async def change_text_no(c: CallbackQuery, state: FSMContext):
     await c.answer()
 
 
-@dp.message(F.text, UGCCreation.waiting_character_text)
+@dp.message(StateFilter(UGCCreation.waiting_character_text), F.text)
 async def character_text_received(m: Message, state: FSMContext):
     """Получен текст от пользователя для генерации аудио"""
     # Сохраняем текст
@@ -502,7 +503,7 @@ async def character_text_received(m: Message, state: FSMContext):
         await state.clear()
 
 
-@dp.message(F.text, UGCCreation.waiting_new_character_text)
+@dp.message(StateFilter(UGCCreation.waiting_new_character_text), F.text)
 async def new_character_text_received(m: Message, state: FSMContext):
     """Получен новый текст для переделки аудио"""
     # Сохраняем новый текст
