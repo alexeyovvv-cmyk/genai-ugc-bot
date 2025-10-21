@@ -6,8 +6,10 @@ import time
 import requests
 from typing import Optional
 from dotenv import load_dotenv
+from tg_bot.utils.logger import setup_logger
 
 load_dotenv()
+logger = setup_logger(__name__)
 
 # Configuration
 FAL_API_KEY = os.getenv("FALAI_API_TOKEN") or os.getenv("FAL_KEY", "")
@@ -27,12 +29,12 @@ async def edit_character_image(image_path: str, prompt: str) -> Optional[str]:
         Path to edited image file, or None if editing failed
     """
     try:
-        print(f"[NANO-BANANA] Starting character edit with prompt: '{prompt}'", flush=True)
-        print(f"[NANO-BANANA] Original image: {image_path}", flush=True)
+        logger.info(f"[NANO-BANANA] Starting character edit with prompt: '{prompt}'")
+        logger.info(f"[NANO-BANANA] Original image: {image_path}")
         
         if not FAL_API_KEY:
-            print("[NANO-BANANA] ❌ FAL API KEY not found in environment", flush=True)
-            print("[NANO-BANANA] Please set FALAI_API_TOKEN or FAL_KEY", flush=True)
+            logger.error("[NANO-BANANA] ❌ FAL API KEY not found in environment")
+            logger.error("[NANO-BANANA] Please set FALAI_API_TOKEN or FAL_KEY")
             return None
         
         # Use synchronous function in thread to avoid blocking
@@ -41,16 +43,14 @@ async def edit_character_image(image_path: str, prompt: str) -> Optional[str]:
         )
         
         if edited_path:
-            print(f"[NANO-BANANA] ✅ Character edit successful: {edited_path}", flush=True)
+            logger.info(f"[NANO-BANANA] ✅ Character edit successful: {edited_path}")
             return edited_path
         else:
-            print("[NANO-BANANA] ❌ Character edit failed", flush=True)
+            logger.error("[NANO-BANANA] ❌ Character edit failed")
             return None
         
     except Exception as e:
-        print(f"[NANO-BANANA] ❌ Character editing failed: {e}", flush=True)
-        import traceback
-        traceback.print_exc()
+        logger.error(f"[NANO-BANANA] ❌ Character editing failed: {e}", exc_info=True)
         return None
 
 
@@ -64,22 +64,22 @@ def _sync_edit_character_image(image_path: str, prompt: str) -> Optional[str]:
     try:
         import fal_client
         
-        print("[NANO-BANANA] Initializing fal.ai client...", flush=True)
+        logger.info("[NANO-BANANA] Initializing fal.ai client...")
         
         # Configure fal_client with API key
         os.environ["FAL_KEY"] = FAL_API_KEY
         
-        print("[NANO-BANANA] Starting nano-banana edit via fal.ai...", flush=True)
+        logger.info("[NANO-BANANA] Starting nano-banana edit via fal.ai...")
         
         # Nano-banana model path
         model = "fal-ai/nano-banana/edit"
         
-        print(f"[NANO-BANANA] Using model: {model}", flush=True)
+        logger.info(f"[NANO-BANANA] Using model: {model}")
         
         # Upload image to fal.ai
-        print("[NANO-BANANA] Uploading image...", flush=True)
+        logger.info("[NANO-BANANA] Uploading image...")
         image_url = fal_client.upload_file(image_path)
-        print(f"[NANO-BANANA] Image uploaded: {image_url}", flush=True)
+        logger.info(f"[NANO-BANANA] Image uploaded: {image_url}")
         
         # Prepare input parameters for nano-banana
         input_params = {
@@ -89,8 +89,8 @@ def _sync_edit_character_image(image_path: str, prompt: str) -> Optional[str]:
             "output_format": "jpeg"
         }
         
-        print(f"[NANO-BANANA] Input params prepared", flush=True)
-        print(f"[NANO-BANANA] Calling fal.ai API...", flush=True)
+        logger.info(f"[NANO-BANANA] Input params prepared")
+        logger.info(f"[NANO-BANANA] Calling fal.ai API...")
         
         # Submit request and wait for result
         result = fal_client.subscribe(
@@ -99,8 +99,8 @@ def _sync_edit_character_image(image_path: str, prompt: str) -> Optional[str]:
             with_logs=True,
         )
         
-        print(f"[NANO-BANANA] ✅ Success with model: {model}", flush=True)
-        print(f"fal.ai result: {result}")
+        logger.info(f"[NANO-BANANA] ✅ Success with model: {model}")
+        logger.info(f"fal.ai result: {result}")
         
         # Extract edited image URL from result
         edited_image_url = None
@@ -125,10 +125,10 @@ def _sync_edit_character_image(image_path: str, prompt: str) -> Optional[str]:
                 edited_image_url = result['url']
         
         if not edited_image_url:
-            print(f"[NANO-BANANA] ❌ Could not find edited image URL in result: {result}")
+            logger.error(f"[NANO-BANANA] ❌ Could not find edited image URL in result: {result}")
             return None
         
-        print(f"[NANO-BANANA] Downloading edited image from: {edited_image_url}")
+        logger.info(f"[NANO-BANANA] Downloading edited image from: {edited_image_url}")
         
         # Download edited image from URL
         response = requests.get(edited_image_url, timeout=120)
@@ -136,7 +136,7 @@ def _sync_edit_character_image(image_path: str, prompt: str) -> Optional[str]:
         image_data = response.content
         
         if not image_data:
-            print("[NANO-BANANA] No edited image data received")
+            logger.error("[NANO-BANANA] No edited image data received")
             return None
         
         # Save edited image to R2
@@ -148,27 +148,25 @@ def _sync_edit_character_image(image_path: str, prompt: str) -> Optional[str]:
         with open(temp_path, "wb") as f:
             f.write(image_data)
         
-        print(f"[NANO-BANANA] Edited image saved locally: {temp_path}")
+        logger.info(f"[NANO-BANANA] Edited image saved locally: {temp_path}")
         
         # Upload to R2
         from tg_bot.services.r2_service import upload_file
         r2_key = f"users/temp_edits/{edited_filename}"
         
         if upload_file(str(temp_path), r2_key):
-            print(f"[NANO-BANANA] ✅ Uploaded to R2: {r2_key}")
+            logger.info(f"[NANO-BANANA] ✅ Uploaded to R2: {r2_key}")
             # Delete local temp file
             os.remove(str(temp_path))
             # Return R2 key instead of local path
             return r2_key
         else:
-            print(f"[NANO-BANANA] ⚠️ R2 upload failed, using local: {temp_path}")
+            logger.warning(f"[NANO-BANANA] ⚠️ R2 upload failed, using local: {temp_path}")
             return str(temp_path)  # Fallback to local
         
     except ImportError:
-        print("[NANO-BANANA] fal-client package not installed. Run: pip install fal-client")
+        logger.error("[NANO-BANANA] fal-client package not installed. Run: pip install fal-client")
         return None
     except Exception as e:
-        print(f"[NANO-BANANA] Error in nano-banana edit: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"[NANO-BANANA] Error in nano-banana edit: {e}", exc_info=True)
         return None

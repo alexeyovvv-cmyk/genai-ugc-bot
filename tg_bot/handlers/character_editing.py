@@ -31,6 +31,7 @@ logger = setup_logger(__name__)
 @dp.callback_query(F.data == "edit_character_yes")
 async def edit_character_yes(c: CallbackQuery, state: FSMContext):
     """Пользователь хочет редактировать персонажа"""
+    logger.info(f"User {c.from_user.id} выбрал редактирование персонажа")
     await c.message.answer(
         "📝 <b>Опишите, что хотите изменить в персонаже</b>\n\n"
         "Например:\n"
@@ -48,6 +49,7 @@ async def edit_character_yes(c: CallbackQuery, state: FSMContext):
 @dp.callback_query(F.data == "edit_character_no")
 async def edit_character_no(c: CallbackQuery, state: FSMContext):
     """Пользователь не хочет редактировать персонажа"""
+    logger.info(f"User {c.from_user.id} пропустил редактирование персонажа, переходим к выбору голоса")
     # Очищаем сессию редактирования
     clear_edit_session(c.from_user.id)
     # Переходим к выбору голоса
@@ -59,6 +61,7 @@ async def edit_character_no(c: CallbackQuery, state: FSMContext):
 async def handle_edit_prompt(m: Message, state: FSMContext):
     """Обработка промпта для редактирования персонажа"""
     prompt = m.text.strip()
+    logger.info(f"User {m.from_user.id} отправил промпт для редактирования: {prompt}")
     
     if not prompt:
         await m.answer("❌ Пожалуйста, опишите, что хотите изменить.")
@@ -73,7 +76,10 @@ async def handle_edit_prompt(m: Message, state: FSMContext):
         edited_path = get_edited_character_path(m.from_user.id)
         current_image_path = edited_path or original_path
         
+        logger.info(f"User {m.from_user.id} - original_path: {original_path}, edited_path: {edited_path}, current_image_path: {current_image_path}")
+        
         if not current_image_path:
+            logger.error(f"User {m.from_user.id} - не найдено изображение персонажа")
             await processing_msg.edit_text("❌ Ошибка: не найдено изображение персонажа.")
             return
         
@@ -89,7 +95,9 @@ async def handle_edit_prompt(m: Message, state: FSMContext):
                 return
         
         # Вызываем сервис редактирования
+        logger.info(f"User {m.from_user.id} - вызываем edit_character_image с путем: {current_image_path}")
         new_edited_path = await edit_character_image(current_image_path, prompt)
+        logger.info(f"User {m.from_user.id} - edit_character_image вернул: {new_edited_path}")
         
         if new_edited_path:
             # Удаляем предыдущую отредактированную версию, если она была
@@ -148,7 +156,7 @@ async def handle_edit_prompt(m: Message, state: FSMContext):
             await state.set_state(UGCCreation.waiting_edit_result_decision)
             
     except Exception as e:
-        logger.error(f"Error in character editing: {e}")
+        logger.error(f"User {m.from_user.id} - Error in character editing: {e}", exc_info=True)
         await processing_msg.edit_text(
             "❌ <b>Произошла ошибка при редактировании</b>\n\n"
             "Попробуйте другой промпт или используйте оригинальное изображение.",
