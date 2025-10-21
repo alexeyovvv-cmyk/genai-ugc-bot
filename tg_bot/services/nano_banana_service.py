@@ -139,16 +139,30 @@ def _sync_edit_character_image(image_path: str, prompt: str) -> Optional[str]:
             print("[NANO-BANANA] No edited image data received")
             return None
         
-        # Save edited image
+        # Save edited image to R2
         timestamp = int(time.time())
         edited_filename = f"edited_character_{timestamp}.jpg"
-        edited_path = TEMP_EDIT_DIR / edited_filename
         
-        with open(edited_path, "wb") as f:
+        # First save locally as temp
+        temp_path = TEMP_EDIT_DIR / edited_filename
+        with open(temp_path, "wb") as f:
             f.write(image_data)
         
-        print(f"[NANO-BANANA] Edited image saved: {edited_path}")
-        return str(edited_path)
+        print(f"[NANO-BANANA] Edited image saved locally: {temp_path}")
+        
+        # Upload to R2
+        from tg_bot.services.r2_service import upload_file
+        r2_key = f"users/temp_edits/{edited_filename}"
+        
+        if upload_file(str(temp_path), r2_key):
+            print(f"[NANO-BANANA] ✅ Uploaded to R2: {r2_key}")
+            # Delete local temp file
+            os.remove(str(temp_path))
+            # Return R2 key instead of local path
+            return r2_key
+        else:
+            print(f"[NANO-BANANA] ⚠️ R2 upload failed, using local: {temp_path}")
+            return str(temp_path)  # Fallback to local
         
     except ImportError:
         print("[NANO-BANANA] fal-client package not installed. Run: pip install fal-client")

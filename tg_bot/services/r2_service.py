@@ -310,3 +310,36 @@ def test_connection() -> bool:
     except Exception as e:
         print(f"[R2] ❌ Connection test failed: {e}")
         return False
+
+def configure_temp_edits_lifecycle() -> bool:
+    """
+    Configure R2 lifecycle policy to auto-delete temp edits after 24 hours.
+    
+    Returns:
+        bool: Configuration success
+    """
+    try:
+        s3 = get_r2_client()
+        
+        lifecycle_config = {
+            'Rules': [
+                {
+                    'ID': 'DeleteTempEditsAfter24h',
+                    'Filter': {'Prefix': 'users/temp_edits/'},
+                    'Status': 'Enabled',
+                    'Expiration': {'Days': 1}
+                }
+            ]
+        }
+        
+        s3.put_bucket_lifecycle_configuration(
+            Bucket=R2_BUCKET_NAME,
+            LifecycleConfiguration=lifecycle_config
+        )
+        
+        print(f"[R2] ✅ Lifecycle policy configured for temp edits (24h TTL)")
+        return True
+        
+    except Exception as e:
+        print(f"[R2] ❌ Failed to configure lifecycle policy: {e}")
+        return False

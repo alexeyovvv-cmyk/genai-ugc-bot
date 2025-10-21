@@ -1,5 +1,5 @@
 # main.py — точка входа бота
-import asyncio, os, pathlib
+import asyncio, os, pathlib, time
 from dotenv import load_dotenv
 from tg_bot.config import BASE_DIR, DATABASE_URL, ensure_dirs
 from aiogram import Bot, Dispatcher, F
@@ -309,6 +309,13 @@ async def on_startup():
             print(f"🌐 Webhook info: url={info.url or 'None'}, has_custom_certificate={info.has_custom_certificate}, pending_update_count={info.pending_update_count}")
         except Exception as wh_err:
             print(f"⚠️  Could not fetch webhook info: {wh_err}")
+        
+        # Configure R2 lifecycle for temp edits
+        try:
+            from tg_bot.services.r2_service import configure_temp_edits_lifecycle
+            configure_temp_edits_lifecycle()
+        except Exception as e:
+            print(f"⚠️ R2 lifecycle configuration skipped: {e}")
 
     except Exception as e:
         print(f"❌ Error creating database tables: {e}")
@@ -933,10 +940,31 @@ async def audio_confirmed(c: CallbackQuery, state: FSMContext):
         
         # Проверяем, есть ли отредактированная версия
         edited_character_path = get_edited_character_path(c.from_user.id)
-        if edited_character_path and os.path.exists(edited_character_path):
-            selected_frame = edited_character_path
-            log(f"[UGC] Используем отредактированную версию персонажа: {edited_character_path}")
+        temp_edited_path = None
+        
+        if edited_character_path:
+            # Check if it's R2 key or local path
+            if edited_character_path.startswith("users/"):
+                # It's R2 key - download to temp for video generation
+                from tg_bot.services.r2_service import download_file
+                temp_edited_path = f"data/temp_edits/temp_{int(time.time())}.jpg"
+                
+                if download_file(edited_character_path, temp_edited_path):
+                    selected_frame = temp_edited_path
+                    log(f"[UGC] Используем отредактированную версию из R2: {edited_character_path}")
+                else:
+                    log(f"[UGC] Не удалось скачать из R2, используем оригинал")
+                    selected_frame = get_character_image(gender, age, character_idx)
+            else:
+                # Legacy local path support
+                if os.path.exists(edited_character_path):
+                    selected_frame = edited_character_path
+                    log(f"[UGC] Используем локальную отредактированную версию: {edited_character_path}")
+                else:
+                    log(f"[UGC] Файл не найден, используем оригинал")
+                    selected_frame = get_character_image(gender, age, character_idx)
         else:
+            # No edited version
             selected_frame = get_character_image(gender, age, character_idx)
             log(f"[UGC] Используем оригинальную систему персонажей: {gender}/{age}, индекс {character_idx}")
         
@@ -1046,9 +1074,26 @@ async def audio_confirmed(c: CallbackQuery, state: FSMContext):
             # Очищаем временные отредактированные изображения персонажа
             try:
                 edited_path = get_edited_character_path(c.from_user.id)
-                if edited_path and os.path.exists(edited_path):
-                    os.remove(edited_path)
-                    log(f"[UGC] ✅ Временное отредактированное изображение удалено: {edited_path}")
+                if edited_path:
+                    # Check if it's R2 key or local path
+                    if edited_path.startswith("users/"):
+                        # It's R2 key - delete from R2
+                        from tg_bot.services.r2_service import delete_file
+                        if delete_file(edited_path):
+                            log(f"[UGC] ✅ Отредактированное изображение удалено из R2: {edited_path}")
+                        else:
+                            log(f"[UGC] ⚠️ Не удалось удалить из R2: {edited_path}")
+                    else:
+                        # Legacy local path
+                        if os.path.exists(edited_path):
+                            os.remove(edited_path)
+                            log(f"[UGC] ✅ Локальное отредактированное изображение удалено: {edited_path}")
+                    
+                    # Also delete temp file if downloaded from R2
+                    if temp_edited_path and os.path.exists(temp_edited_path):
+                        os.remove(temp_edited_path)
+                        log(f"[UGC] ✅ Временный файл удален: {temp_edited_path}")
+                
                 # Очищаем сессию редактирования
                 clear_edit_session(c.from_user.id)
                 log(f"[UGC] ✅ Сессия редактирования очищена")
@@ -1694,24 +1739,22 @@ async def use_edited_character(c: CallbackQuery, state: FSMContext):
     edited_path = get_edited_character_path(c.from_user.id)
     
     if edited_path and os.path.exists(edited_path):
-        # Перемещаем отредактированное изображение в место оригинального
-        original_path = get_original_character_path(c.from_user.id)
-        if original_path:
-            try:
-                import shutil
-                # Создаем резервную копию оригинального, если нужно
-                backup_path = original_path + ".backup"
-                if os.path.exists(original_path) and not os.path.exists(backup_path):
-                    shutil.copy2(original_path, backup_path)
-                
-                # Заменяем оригинальное изображение отредактированным
-                shutil.copy2(edited_path, original_path)
-                print(f"[EDIT] Заменили оригинальное изображение отредактированным: {original_path}")
-            except Exception as e:
-                print(f"[EDIT] Ошибка при замене изображения: {e}")
+        # НЕ заменяем оригинальный файл в папке персонажей!
+        # Вместо этого просто оставляем отредактированный путь как финальный
+        # В video generation мы будем проверять edited_character_path
+        print(f"[EDIT] Пользователь выбрал использовать отредактированную версию: {edited_path}")
+        print(f"[EDIT] Отредактированное изображение будет использоваться в video generation")
+    else:
+        print(f"[EDIT] Отредактированное изображение не найдено")
     
-    # Очищаем сессию редактирования
-    clear_edit_session(c.from_user.id)
+    # НЕ очищаем сессию редактирования - оставляем edited_character_path
+    # Очищаем только счетчик итераций и original_character_path
+    from tg_bot.utils.user_state import set_original_character_path, set_edited_character_path, increment_edit_iteration
+    
+    # Очищаем только ненужные поля, но оставляем edited_character_path
+    set_original_character_path(c.from_user.id, None)
+    # edited_character_path остается для использования в video generation
+    
     # Переходим к выбору голоса
     await show_voice_gallery(c, state)
 
@@ -1722,9 +1765,19 @@ async def use_original_character(c: CallbackQuery, state: FSMContext):
     edited_path = get_edited_character_path(c.from_user.id)
     if edited_path:
         try:
-            import os
-            if os.path.exists(edited_path):
-                os.remove(edited_path)
+            # Check if it's R2 key or local path
+            if edited_path.startswith("users/"):
+                # It's R2 key - delete from R2
+                from tg_bot.services.r2_service import delete_file
+                if delete_file(edited_path):
+                    print(f"[EDIT] Удалено из R2: {edited_path}")
+                else:
+                    print(f"[EDIT] Не удалось удалить из R2: {edited_path}")
+            else:
+                # Legacy local path
+                if os.path.exists(edited_path):
+                    os.remove(edited_path)
+                    print(f"[EDIT] Локальный файл удален: {edited_path}")
         except Exception as e:
             print(f"Warning: Could not delete edited image {edited_path}: {e}")
     
