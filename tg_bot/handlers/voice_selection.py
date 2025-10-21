@@ -14,7 +14,8 @@ from tg_bot.states import UGCCreation
 from tg_bot.utils.user_state import (
     get_character_gender, get_character_age,
     get_voice_page, set_voice_page,
-    get_character_text, get_selected_voice
+    get_character_text, get_selected_voice,
+    set_selected_voice
 )
 from tg_bot.utils.voices import list_voice_samples, get_voice_sample
 from tg_bot.keyboards import voice_gallery_menu, back_to_main_menu
@@ -144,7 +145,6 @@ async def voice_picked(c: CallbackQuery, state: FSMContext):
     name, voice_id, sample_path = voice_data
     
     # Сохраняем выбор голоса (используем глобальный индекс)
-    from tg_bot.utils.user_state import set_selected_voice
     set_selected_voice(c.from_user.id, voice_id)
     logger.info(f"User {c.from_user.id} выбрал голос #{idx+1}: {name} ({voice_id})")
     

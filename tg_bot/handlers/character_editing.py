@@ -15,8 +15,8 @@ from aiogram.fsm.context import FSMContext
 from tg_bot.states import UGCCreation
 from tg_bot.utils.user_state import (
     get_original_character_path, get_edited_character_path,
-    set_edited_character_path, increment_edit_iteration,
-    clear_edit_session, set_voice_page
+    set_original_character_path, set_edited_character_path, 
+    increment_edit_iteration, clear_edit_session, set_voice_page
 )
 from tg_bot.services.nano_banana_service import edit_character_image
 from tg_bot.keyboards import (
@@ -175,8 +175,6 @@ async def use_edited_character(c: CallbackQuery, state: FSMContext):
     
     # НЕ очищаем сессию редактирования - оставляем edited_character_path
     # Очищаем только счетчик итераций и original_character_path
-    from tg_bot.utils.user_state import set_original_character_path, set_edited_character_path, increment_edit_iteration
-    
     # Очищаем только ненужные поля, но оставляем edited_character_path
     set_original_character_path(c.from_user.id, None)
     # edited_character_path остается для использования в video generation

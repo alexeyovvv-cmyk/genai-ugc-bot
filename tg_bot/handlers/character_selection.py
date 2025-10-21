@@ -16,6 +16,7 @@ from tg_bot.utils.user_state import (
     set_character_gender, get_character_gender,
     set_character_age, get_character_age,
     set_character_page, get_character_page,
+    set_voice_page, get_voice_page,
     set_selected_character, set_original_character_path
 )
 from tg_bot.utils.files import list_character_images, get_character_image
