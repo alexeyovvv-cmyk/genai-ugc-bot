@@ -1687,6 +1687,17 @@ async def handle_edit_prompt(m: Message, state: FSMContext):
             await processing_msg.edit_text("❌ Ошибка: не найдено изображение персонажа.")
             return
         
+        # Если current_image_path это R2 ключ, скачиваем его для редактирования
+        if current_image_path.startswith("users/"):
+            from tg_bot.services.r2_service import download_file
+            temp_edit_path = f"data/temp_edits/edit_{int(time.time())}.jpg"
+            if download_file(current_image_path, temp_edit_path):
+                current_image_path = temp_edit_path
+                print(f"[EDIT] Скачали из R2 для редактирования: {current_image_path}")
+            else:
+                await processing_msg.edit_text("❌ Не удалось загрузить изображение для редактирования.")
+                return
+        
         # Вызываем сервис редактирования
         new_edited_path = await edit_character_image(current_image_path, prompt)
         
@@ -1704,10 +1715,35 @@ async def handle_edit_prompt(m: Message, state: FSMContext):
             set_edited_character_path(m.from_user.id, new_edited_path)
             increment_edit_iteration(m.from_user.id)
             
+            # Очищаем временный файл редактирования (если был скачан из R2)
+            if current_image_path.startswith("data/temp_edits/edit_"):
+                try:
+                    os.remove(current_image_path)
+                    print(f"[EDIT] Удален временный файл редактирования: {current_image_path}")
+                except Exception as e:
+                    print(f"[EDIT] Ошибка при удалении временного файла: {e}")
+            
             # Показываем результат
             await processing_msg.delete()
             await m.answer("✨ <b>Вот результат!</b>", parse_mode="HTML")
-            await m.answer_photo(FSInputFile(new_edited_path))
+            
+            # Проверяем, нужно ли скачать из R2 для показа
+            if new_edited_path.startswith("users/"):
+                # Это R2 ключ - скачиваем для показа
+                from tg_bot.services.r2_service import download_file
+                temp_show_path = f"data/temp_edits/show_{int(time.time())}.jpg"
+                if download_file(new_edited_path, temp_show_path):
+                    await m.answer_photo(FSInputFile(temp_show_path))
+                    # НЕ удаляем временный файл - он может понадобиться для:
+                    # 1. Video generation (если пользователь выберет "использовать эту редакцию")
+                    # 2. Следующего редактирования (если выберет "редактировать дальше")
+                    # Удалим его только при финальном выборе
+                else:
+                    await m.answer("❌ Не удалось загрузить изображение для показа")
+            else:
+                # Локальный путь
+                await m.answer_photo(FSInputFile(new_edited_path))
+            
             await m.answer(
                 "Что хотите сделать дальше?",
                 reply_markup=edit_result_menu()
@@ -1755,6 +1791,17 @@ async def use_edited_character(c: CallbackQuery, state: FSMContext):
     set_original_character_path(c.from_user.id, None)
     # edited_character_path остается для использования в video generation
     
+    # Очищаем временный файл показа (если был скачан из R2)
+    try:
+        import glob
+        temp_files = glob.glob("data/temp_edits/show_*.jpg")
+        for temp_file in temp_files:
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
+                print(f"[EDIT] Удален временный файл показа: {temp_file}")
+    except Exception as e:
+        print(f"[EDIT] Ошибка при очистке временных файлов: {e}")
+    
     # Переходим к выбору голоса
     await show_voice_gallery(c, state)
 
@@ -1783,6 +1830,18 @@ async def use_original_character(c: CallbackQuery, state: FSMContext):
     
     # Очищаем сессию редактирования
     clear_edit_session(c.from_user.id)
+    
+    # Очищаем временный файл показа (если был скачан из R2)
+    try:
+        import glob
+        temp_files = glob.glob("data/temp_edits/show_*.jpg")
+        for temp_file in temp_files:
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
+                print(f"[EDIT] Удален временный файл показа: {temp_file}")
+    except Exception as e:
+        print(f"[EDIT] Ошибка при очистке временных файлов: {e}")
+    
     # Переходим к выбору голоса
     await show_voice_gallery(c, state)
 
