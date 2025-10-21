@@ -27,7 +27,7 @@ async def cmd_start(m: Message):
     """Handle /start command"""
     from tg_bot.utils.credits import ensure_user
     ensure_user(m.from_user.id)
-    track_user_activity(m.from_user.id)  # Отслеживаем активность пользователя
+    # track_user_activity(m.from_user.id)  # Отслеживаем активность пользователя - ОТКЛЮЧЕНО
     current_credits = get_credits(m.from_user.id)
     await m.answer(
         "🎬 <b>Добро пожаловать в сервис Datanauts.co</b>\n\n"
