@@ -55,13 +55,17 @@ async def generate_talking_head_video(
             
             # Upload to R2 if user_id provided
             if user_id:
+                print(f"[FALAI] User ID provided: {user_id}", flush=True)
                 try:
                     timestamp = int(time.time())
                     video_filename = f"datanauts_ugcad_{timestamp}.mp4"
                     r2_video_key = f"users/{user_id}/generated_videos/{video_filename}"
                     
                     print(f"[FALAI] Uploading video to R2: {r2_video_key}", flush=True)
-                    if upload_file(video_path, r2_video_key):
+                    print(f"[FALAI] Local video path: {video_path}", flush=True)
+                    upload_success = upload_file(video_path, r2_video_key)
+                    print(f"[FALAI] Upload result: {upload_success}", flush=True)
+                    if upload_success:
                         print(f"[FALAI] ✅ Video uploaded to R2: {r2_video_key}", flush=True)
                         
                         # Аудио не сохраняем отдельно - оно уже включено в MP4 видео
@@ -80,6 +84,12 @@ async def generate_talking_head_video(
                             print(f"[FALAI] ⚠️ Failed to generate presigned URL, returning local path", flush=True)
                     else:
                         print(f"[FALAI] ⚠️ Failed to upload to R2, returning local path", flush=True)
+                        return {
+                            'local_path': video_path,
+                            'video_url': None,
+                            'r2_video_key': None,
+                            'r2_audio_key': None  # Аудио не сохраняем отдельно
+                        }
                 except Exception as e:
                     print(f"[FALAI] ⚠️ R2 upload error: {e}", flush=True)
             

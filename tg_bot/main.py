@@ -878,6 +878,9 @@ async def audio_confirmed(c: CallbackQuery, state: FSMContext):
         print(msg, flush=True)
         sys.stdout.flush()
     
+    # Отвечаем на callback query сразу, чтобы избежать timeout
+    await c.answer()
+    
     log(f"[UGC] User {c.from_user.id} подтвердил аудио, начинаем генерацию видео")
     
     # Проверяем кредиты
@@ -958,6 +961,7 @@ async def audio_confirmed(c: CallbackQuery, state: FSMContext):
         log(f"[UGC] Аудио файл: {audio_path}")
         
         try:
+            log(f"[UGC] Calling generate_talking_head_video with user_id: {c.from_user.id}")
             video_result = await generate_talking_head_video(
                 audio_path=audio_path,
                 image_path=selected_frame,
@@ -1088,8 +1092,6 @@ async def audio_confirmed(c: CallbackQuery, state: FSMContext):
             reply_markup=main_menu()
         )
         await state.clear()
-    
-    await c.answer()
 
 @dp.callback_query(F.data == "audio_redo")
 async def audio_redo(c: CallbackQuery, state: FSMContext):
@@ -1688,6 +1690,26 @@ async def handle_edit_prompt(m: Message, state: FSMContext):
 @dp.callback_query(F.data == "use_edited_character")
 async def use_edited_character(c: CallbackQuery, state: FSMContext):
     """Пользователь выбрал использовать отредактированную версию"""
+    # Получаем путь к отредактированному изображению
+    edited_path = get_edited_character_path(c.from_user.id)
+    
+    if edited_path and os.path.exists(edited_path):
+        # Перемещаем отредактированное изображение в место оригинального
+        original_path = get_original_character_path(c.from_user.id)
+        if original_path:
+            try:
+                import shutil
+                # Создаем резервную копию оригинального, если нужно
+                backup_path = original_path + ".backup"
+                if os.path.exists(original_path) and not os.path.exists(backup_path):
+                    shutil.copy2(original_path, backup_path)
+                
+                # Заменяем оригинальное изображение отредактированным
+                shutil.copy2(edited_path, original_path)
+                print(f"[EDIT] Заменили оригинальное изображение отредактированным: {original_path}")
+            except Exception as e:
+                print(f"[EDIT] Ошибка при замене изображения: {e}")
+    
     # Очищаем сессию редактирования
     clear_edit_session(c.from_user.id)
     # Переходим к выбору голоса

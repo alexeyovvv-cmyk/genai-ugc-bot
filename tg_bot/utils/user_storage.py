@@ -39,8 +39,17 @@ def save_user_generation(
     """
     try:
         with SessionLocal() as db:
+            # Преобразуем TG ID в внутренний ID
+            user = db.execute(select(User).where(User.tg_id == user_id)).scalar_one_or_none()
+            if not user:
+                print(f"[USER_STORAGE] ❌ User with TG ID {user_id} not found")
+                return None
+            
+            internal_user_id = user.id
+            print(f"[USER_STORAGE] Converting TG ID {user_id} to internal ID {internal_user_id}")
+            
             generation = GenerationHistory(
-                user_id=user_id,
+                user_id=internal_user_id,
                 generation_type=generation_type,
                 r2_video_key=r2_video_key,
                 r2_audio_key=r2_audio_key,
@@ -76,10 +85,19 @@ def get_user_generations(user_id: int, limit: int = 10, offset: int = 0) -> List
     """
     try:
         with SessionLocal() as db:
+            # Преобразуем TG ID в внутренний ID
+            user = db.execute(select(User).where(User.tg_id == user_id)).scalar_one_or_none()
+            if not user:
+                print(f"[USER_STORAGE] ❌ User with TG ID {user_id} not found")
+                return []
+            
+            internal_user_id = user.id
+            print(f"[USER_STORAGE] Converting TG ID {user_id} to internal ID {internal_user_id}")
+            
             # Get user's generations
             generations = db.execute(
                 select(GenerationHistory)
-                .where(GenerationHistory.user_id == user_id)
+                .where(GenerationHistory.user_id == internal_user_id)
                 .order_by(desc(GenerationHistory.created_at))
                 .limit(limit)
                 .offset(offset)
@@ -136,10 +154,19 @@ def get_user_storage_stats(user_id: int) -> Dict[str, Any]:
     """
     try:
         with SessionLocal() as db:
+            # Преобразуем TG ID в внутренний ID
+            user = db.execute(select(User).where(User.tg_id == user_id)).scalar_one_or_none()
+            if not user:
+                print(f"[USER_STORAGE] ❌ User with TG ID {user_id} not found")
+                return {}
+            
+            internal_user_id = user.id
+            print(f"[USER_STORAGE] Converting TG ID {user_id} to internal ID {internal_user_id}")
+            
             # Count generations
             total_generations = db.execute(
                 select(GenerationHistory)
-                .where(GenerationHistory.user_id == user_id)
+                .where(GenerationHistory.user_id == internal_user_id)
             ).scalars().all()
             
             # Count by type
@@ -179,11 +206,20 @@ def delete_user_generation(user_id: int, generation_id: int) -> bool:
     """
     try:
         with SessionLocal() as db:
+            # Преобразуем TG ID в внутренний ID
+            user = db.execute(select(User).where(User.tg_id == user_id)).scalar_one_or_none()
+            if not user:
+                print(f"[USER_STORAGE] ❌ User with TG ID {user_id} not found")
+                return False
+            
+            internal_user_id = user.id
+            print(f"[USER_STORAGE] Converting TG ID {user_id} to internal ID {internal_user_id}")
+            
             # Get generation record
             generation = db.execute(
                 select(GenerationHistory)
                 .where(GenerationHistory.id == generation_id)
-                .where(GenerationHistory.user_id == user_id)
+                .where(GenerationHistory.user_id == internal_user_id)
             ).scalar_one_or_none()
             
             if not generation:
@@ -229,10 +265,19 @@ def get_generation_by_id(user_id: int, generation_id: int) -> Optional[Dict[str,
     """
     try:
         with SessionLocal() as db:
+            # Преобразуем TG ID в внутренний ID
+            user = db.execute(select(User).where(User.tg_id == user_id)).scalar_one_or_none()
+            if not user:
+                print(f"[USER_STORAGE] ❌ User with TG ID {user_id} not found")
+                return None
+            
+            internal_user_id = user.id
+            print(f"[USER_STORAGE] Converting TG ID {user_id} to internal ID {internal_user_id}")
+            
             generation = db.execute(
                 select(GenerationHistory)
                 .where(GenerationHistory.id == generation_id)
-                .where(GenerationHistory.user_id == user_id)
+                .where(GenerationHistory.user_id == internal_user_id)
             ).scalar_one_or_none()
             
             if not generation:
@@ -287,10 +332,19 @@ def cleanup_old_generations(user_id: int, days_old: int = 30) -> int:
         cutoff_date = datetime.now() - timedelta(days=days_old)
         
         with SessionLocal() as db:
+            # Преобразуем TG ID в внутренний ID
+            user = db.execute(select(User).where(User.tg_id == user_id)).scalar_one_or_none()
+            if not user:
+                print(f"[USER_STORAGE] ❌ User with TG ID {user_id} not found")
+                return 0
+            
+            internal_user_id = user.id
+            print(f"[USER_STORAGE] Converting TG ID {user_id} to internal ID {internal_user_id}")
+            
             # Get old generations
             old_generations = db.execute(
                 select(GenerationHistory)
-                .where(GenerationHistory.user_id == user_id)
+                .where(GenerationHistory.user_id == internal_user_id)
                 .where(GenerationHistory.created_at < cutoff_date)
             ).scalars().all()
             
