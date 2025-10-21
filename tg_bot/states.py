@@ -25,6 +25,10 @@ class UGCCreation(StatesGroup):
     waiting_audio_confirmation = State()  # ждем подтверждение аудио или переделку
     waiting_text_change_decision = State()  # ждем решение, менять ли текст
     waiting_new_character_text = State()  # ждем новый текст для переделки аудио
+    # Character editing states
+    waiting_edit_decision = State()  # ждем решение пользователя: редактировать персонажа или нет
+    waiting_edit_prompt = State()  # ждем описание изменений для редактирования
+    waiting_edit_result_decision = State()  # ждем решение после показа отредактированного результата
 
 class Feedback(StatesGroup):
     """Состояния для обратной связи"""

@@ -51,6 +51,10 @@ class UserState(Base):
     character_age: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # возраст персонажа
     character_page: Mapped[Optional[int]] = mapped_column(Integer, default=0)  # текущая страница персонажей
     voice_page: Mapped[Optional[int]] = mapped_column(Integer, default=0)  # текущая страница голосов
+    # Character editing fields
+    original_character_path: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # путь к оригинальному изображению персонажа
+    edited_character_path: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # путь к отредактированной версии
+    edit_iteration_count: Mapped[Optional[int]] = mapped_column(Integer, default=0)  # количество итераций редактирования
     created_at: Mapped[str] = mapped_column(DateTime, server_default=func.now())
     # updated_at можно добавить позже триггером, пока не требуется
 

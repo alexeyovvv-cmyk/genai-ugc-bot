@@ -236,3 +236,26 @@ def bottom_navigation_menu():
             InlineKeyboardButton(text="⬅️ Назад", callback_data="back_previous")
         ]
     ])
+
+# Character editing keyboards
+def character_edit_offer_menu():
+    """Меню предложения редактирования персонажа"""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🎨 Редактировать персонажа", callback_data="edit_character_yes")],
+        [InlineKeyboardButton(text="✅ Использовать как есть", callback_data="edit_character_no")]
+    ])
+
+def edit_result_menu():
+    """Меню выбора после показа отредактированного результата"""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔄 Редактировать дальше", callback_data="continue_editing")],
+        [InlineKeyboardButton(text="📷 Использовать оригинал", callback_data="use_original_character")],
+        [InlineKeyboardButton(text="✨ Использовать эту редакцию", callback_data="use_edited_character")]
+    ])
+
+def edit_error_menu():
+    """Меню при ошибке редактирования"""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔄 Попробовать другой промпт", callback_data="retry_edit_prompt")],
+        [InlineKeyboardButton(text="📷 Использовать оригинал", callback_data="use_original_character")]
+    ])

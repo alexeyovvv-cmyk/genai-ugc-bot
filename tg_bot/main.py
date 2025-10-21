@@ -27,10 +27,14 @@ from tg_bot.keyboards import (
     character_gallery_menu,
     character_selection_menu,
     credits_menu,
+    character_edit_offer_menu,
+    edit_result_menu,
+    edit_error_menu,
 )
 from tg_bot.states import UGCCreation
 from tg_bot.services.falai_service import generate_talking_head_video
 from tg_bot.services.elevenlabs_service import tts_to_file
+from tg_bot.services.nano_banana_service import edit_character_image
 from tg_bot.utils.files import (
     list_character_images, 
     get_character_image,
@@ -47,6 +51,12 @@ from tg_bot.utils.user_state import (
     get_character_text,
     set_selected_voice,
     get_selected_voice,
+    set_original_character_path,
+    get_original_character_path,
+    set_edited_character_path,
+    get_edited_character_path,
+    increment_edit_iteration,
+    clear_edit_session,
     set_last_audio,
     get_last_audio,
 )
@@ -234,7 +244,10 @@ async def on_startup():
                 ADD COLUMN IF NOT EXISTS character_age VARCHAR,
                 ADD COLUMN IF NOT EXISTS character_page INTEGER DEFAULT 0,
                 ADD COLUMN IF NOT EXISTS selected_voice_idx INTEGER,
-                ADD COLUMN IF NOT EXISTS voice_page INTEGER DEFAULT 0;
+                ADD COLUMN IF NOT EXISTS voice_page INTEGER DEFAULT 0,
+                ADD COLUMN IF NOT EXISTS original_character_path VARCHAR,
+                ADD COLUMN IF NOT EXISTS edited_character_path VARCHAR,
+                ADD COLUMN IF NOT EXISTS edit_iteration_count INTEGER DEFAULT 0;
                 
                 -- Create user_activity table if it doesn't exist
                 CREATE TABLE IF NOT EXISTS user_activity (
@@ -791,12 +804,27 @@ async def character_picked(c: CallbackQuery, state: FSMContext):
     set_voice_page(c.from_user.id, 0)  # Сбрасываем страницу голосов
     print(f"User {c.from_user.id} выбрал персонажа #{idx+1} ({gender}, {age})")
     
+    # Сохраняем оригинальный путь к изображению персонажа
+    set_original_character_path(c.from_user.id, character_image)
+    
     # Подтверждаем выбор пользователю: сообщение и изображение выбранного персонажа
     await c.message.answer(f"✅ Вы выбрали персонажа #{idx+1}")
     await c.message.answer_photo(FSInputFile(character_image))
     
-    # Показываем галерею голосов для выбранного персонажа
-    await show_voice_gallery(c, state)
+    # Предлагаем редактирование персонажа
+    await c.message.answer(
+        "🎨 <b>Хотите отредактировать персонажа?</b>\n\n"
+        "Вы можете изменить:\n"
+        "• Фон (пляж, офис, улица)\n"
+        "• Одежду (деловой стиль, casual)\n"
+        "• Аксессуары (очки, шляпа)\n"
+        "• И многое другое!",
+        parse_mode="HTML",
+        reply_markup=character_edit_offer_menu()
+    )
+    
+    await state.set_state(UGCCreation.waiting_edit_decision)
+    await c.answer()
 
 @dp.callback_query(F.data.startswith("voice_pick:"))
 async def voice_picked(c: CallbackQuery, state: FSMContext):
@@ -896,12 +924,18 @@ async def audio_confirmed(c: CallbackQuery, state: FSMContext):
         log(f"[UGC] Текст: {character_text[:30] if character_text else 'None'}...")
         log(f"[UGC] Аудио: {audio_path}")
         
-        # Получаем изображение персонажа
+        # Получаем изображение персонажа (сначала проверяем отредактированную версию)
         if not gender or not age or character_idx is None:
             raise Exception("Не выбраны параметры персонажа (пол, возраст или индекс). Начните сначала.")
         
-        selected_frame = get_character_image(gender, age, character_idx)
-        log(f"[UGC] Используем систему персонажей: {gender}/{age}, индекс {character_idx}")
+        # Проверяем, есть ли отредактированная версия
+        edited_character_path = get_edited_character_path(c.from_user.id)
+        if edited_character_path and os.path.exists(edited_character_path):
+            selected_frame = edited_character_path
+            log(f"[UGC] Используем отредактированную версию персонажа: {edited_character_path}")
+        else:
+            selected_frame = get_character_image(gender, age, character_idx)
+            log(f"[UGC] Используем оригинальную систему персонажей: {gender}/{age}, индекс {character_idx}")
         
         if not selected_frame:
             log(f"[UGC] ❌ Кадр не найден!")
@@ -939,8 +973,12 @@ async def audio_confirmed(c: CallbackQuery, state: FSMContext):
             # r2_audio_key всегда None - аудио включено в MP4
             
             log(f"[UGC] Видео сгенерировано: {video_path}")
+            log(f"[UGC] Video URL: {video_url}")
+            log(f"[UGC] R2 Video Key: {r2_video_key}")
             if r2_video_key:
                 log(f"[UGC] Видео сохранено в R2: {r2_video_key}")
+            else:
+                log(f"[UGC] ⚠️ R2 Video Key is None - video not saved to R2")
         except Exception as video_error:
             log(f"[UGC] ❌ Ошибка при генерации видео: {video_error}")
             import traceback
@@ -971,19 +1009,27 @@ async def audio_confirmed(c: CallbackQuery, state: FSMContext):
             # Сохраняем генерацию в историю
             try:
                 from tg_bot.utils.user_storage import save_user_generation
-                save_user_generation(
+                log(f"[UGC] Сохраняем генерацию в историю...")
+                log(f"[UGC] User ID: {c.from_user.id}")
+                log(f"[UGC] R2 Video Key: {r2_video_key}")
+                log(f"[UGC] Character: {get_character_gender(c.from_user.id)}/{get_character_age(c.from_user.id)}")
+                log(f"[UGC] Text: {get_character_text(c.from_user.id)}")
+                
+                generation_id = save_user_generation(
                     user_id=c.from_user.id,
                     generation_type='video',
-                    video_r2_key=r2_video_key,
-                    audio_r2_key=None,  # Аудио включено в MP4, не сохраняем отдельно
+                    r2_video_key=r2_video_key,
+                    r2_audio_key=None,  # Аудио включено в MP4, не сохраняем отдельно
                     character_gender=get_character_gender(c.from_user.id),
                     character_age=get_character_age(c.from_user.id),
                     text_prompt=get_character_text(c.from_user.id),
                     credits_spent=COST_UGC_VIDEO
                 )
-                log(f"[UGC] ✅ Генерация сохранена в историю с R2 ключами")
+                log(f"[UGC] ✅ Генерация сохранена в историю с ID: {generation_id}")
             except Exception as save_error:
                 log(f"[UGC] ⚠️ Не удалось сохранить генерацию в историю: {save_error}")
+                import traceback
+                traceback.print_exc()
             
             # Удаляем видео файл после отправки
             try:
@@ -992,6 +1038,18 @@ async def audio_confirmed(c: CallbackQuery, state: FSMContext):
                     log(f"[UGC] ✅ Видео файл удален: {video_path}")
             except Exception as cleanup_error:
                 log(f"[UGC] ⚠️ Не удалось удалить видео файл: {cleanup_error}")
+            
+            # Очищаем временные отредактированные изображения персонажа
+            try:
+                edited_path = get_edited_character_path(c.from_user.id)
+                if edited_path and os.path.exists(edited_path):
+                    os.remove(edited_path)
+                    log(f"[UGC] ✅ Временное отредактированное изображение удалено: {edited_path}")
+                # Очищаем сессию редактирования
+                clear_edit_session(c.from_user.id)
+                log(f"[UGC] ✅ Сессия редактирования очищена")
+            except Exception as cleanup_error:
+                log(f"[UGC] ⚠️ Не удалось очистить временные файлы редактирования: {cleanup_error}")
         else:
             # Авто-рефанд если видео не получено
             from tg_bot.utils.credits import add_credits
@@ -1012,6 +1070,17 @@ async def audio_confirmed(c: CallbackQuery, state: FSMContext):
         log(f"[UGC] ❌ Критическая ошибка при создании UGC рекламы: {e}")
         import traceback
         traceback.print_exc()
+        
+        # Очищаем временные файлы редактирования при ошибке
+        try:
+            edited_path = get_edited_character_path(c.from_user.id)
+            if edited_path and os.path.exists(edited_path):
+                os.remove(edited_path)
+                log(f"[UGC] ✅ Временное отредактированное изображение удалено при ошибке: {edited_path}")
+            clear_edit_session(c.from_user.id)
+            log(f"[UGC] ✅ Сессия редактирования очищена при ошибке")
+        except Exception as cleanup_error:
+            log(f"[UGC] ⚠️ Не удалось очистить временные файлы при ошибке: {cleanup_error}")
         
         await c.message.answer(
             f"❌ Произошла ошибка при создании видео:\n\n{str(e)}\n\n"
@@ -1522,6 +1591,146 @@ async def back_to_ugc(c: CallbackQuery, state: FSMContext):
         reply_markup=ugc_start_menu()
     )
     await state.clear()
+    await c.answer()
+
+# Character editing handlers
+@dp.callback_query(F.data == "edit_character_yes")
+async def edit_character_yes(c: CallbackQuery, state: FSMContext):
+    """Пользователь хочет редактировать персонажа"""
+    await c.message.answer(
+        "📝 <b>Опишите, что хотите изменить в персонаже</b>\n\n"
+        "Например:\n"
+        "• 'измени фон на пляж'\n"
+        "• 'добавь очки'\n"
+        "• 'поменяй одежду на деловой костюм'\n"
+        "• 'добавь шляпу'\n\n"
+        "Чем подробнее опишете, тем лучше результат!",
+        parse_mode="HTML"
+    )
+    await state.set_state(UGCCreation.waiting_edit_prompt)
+    await c.answer()
+
+@dp.callback_query(F.data == "edit_character_no")
+async def edit_character_no(c: CallbackQuery, state: FSMContext):
+    """Пользователь не хочет редактировать персонажа"""
+    # Очищаем сессию редактирования
+    clear_edit_session(c.from_user.id)
+    # Переходим к выбору голоса
+    await show_voice_gallery(c, state)
+
+@dp.message(UGCCreation.waiting_edit_prompt)
+async def handle_edit_prompt(m: Message, state: FSMContext):
+    """Обработка промпта для редактирования персонажа"""
+    prompt = m.text.strip()
+    
+    if not prompt:
+        await m.answer("❌ Пожалуйста, опишите, что хотите изменить.")
+        return
+    
+    # Показываем сообщение о начале обработки
+    processing_msg = await m.answer("⏳ Редактируем персонажа...")
+    
+    try:
+        # Получаем текущее изображение (оригинал или уже отредактированное)
+        original_path = get_original_character_path(m.from_user.id)
+        edited_path = get_edited_character_path(m.from_user.id)
+        current_image_path = edited_path or original_path
+        
+        if not current_image_path:
+            await processing_msg.edit_text("❌ Ошибка: не найдено изображение персонажа.")
+            return
+        
+        # Вызываем сервис редактирования
+        new_edited_path = await edit_character_image(current_image_path, prompt)
+        
+        if new_edited_path:
+            # Удаляем предыдущую отредактированную версию, если она была
+            if edited_path and edited_path != original_path:
+                try:
+                    import os
+                    if os.path.exists(edited_path):
+                        os.remove(edited_path)
+                except Exception as e:
+                    print(f"Warning: Could not delete old edited image {edited_path}: {e}")
+            
+            # Сохраняем новую отредактированную версию
+            set_edited_character_path(m.from_user.id, new_edited_path)
+            increment_edit_iteration(m.from_user.id)
+            
+            # Показываем результат
+            await processing_msg.delete()
+            await m.answer("✨ <b>Вот результат!</b>", parse_mode="HTML")
+            await m.answer_photo(FSInputFile(new_edited_path))
+            await m.answer(
+                "Что хотите сделать дальше?",
+                reply_markup=edit_result_menu()
+            )
+            await state.set_state(UGCCreation.waiting_edit_result_decision)
+        else:
+            await processing_msg.edit_text(
+                "❌ <b>Что-то пошло не так при редактировании</b>\n\n"
+                "Попробуйте другой промпт или используйте оригинальное изображение.",
+                parse_mode="HTML",
+                reply_markup=edit_error_menu()
+            )
+            await state.set_state(UGCCreation.waiting_edit_result_decision)
+            
+    except Exception as e:
+        print(f"Error in character editing: {e}")
+        await processing_msg.edit_text(
+            "❌ <b>Произошла ошибка при редактировании</b>\n\n"
+            "Попробуйте другой промпт или используйте оригинальное изображение.",
+            parse_mode="HTML",
+            reply_markup=edit_error_menu()
+        )
+        await state.set_state(UGCCreation.waiting_edit_result_decision)
+
+@dp.callback_query(F.data == "use_edited_character")
+async def use_edited_character(c: CallbackQuery, state: FSMContext):
+    """Пользователь выбрал использовать отредактированную версию"""
+    # Очищаем сессию редактирования
+    clear_edit_session(c.from_user.id)
+    # Переходим к выбору голоса
+    await show_voice_gallery(c, state)
+
+@dp.callback_query(F.data == "use_original_character")
+async def use_original_character(c: CallbackQuery, state: FSMContext):
+    """Пользователь выбрал использовать оригинальную версию"""
+    # Удаляем отредактированную версию, если она есть
+    edited_path = get_edited_character_path(c.from_user.id)
+    if edited_path:
+        try:
+            import os
+            if os.path.exists(edited_path):
+                os.remove(edited_path)
+        except Exception as e:
+            print(f"Warning: Could not delete edited image {edited_path}: {e}")
+    
+    # Очищаем сессию редактирования
+    clear_edit_session(c.from_user.id)
+    # Переходим к выбору голоса
+    await show_voice_gallery(c, state)
+
+@dp.callback_query(F.data == "continue_editing")
+async def continue_editing(c: CallbackQuery, state: FSMContext):
+    """Пользователь хочет продолжить редактирование"""
+    await c.message.answer(
+        "📝 <b>Опишите следующие изменения</b>\n\n"
+        "Что еще хотите изменить в персонаже?",
+        parse_mode="HTML"
+    )
+    await state.set_state(UGCCreation.waiting_edit_prompt)
+    await c.answer()
+
+@dp.callback_query(F.data == "retry_edit_prompt")
+async def retry_edit_prompt(c: CallbackQuery, state: FSMContext):
+    """Пользователь хочет попробовать другой промпт"""
+    await c.message.answer(
+        "📝 <b>Попробуйте другой промпт</b>\n\n"
+        "Опишите изменения по-другому или более конкретно.",
+        parse_mode="HTML"
+    )
+    await state.set_state(UGCCreation.waiting_edit_prompt)
     await c.answer()
 
 async def main():

@@ -109,5 +109,64 @@ def get_character_text(tg_id: int) -> Optional[str]:
         return state.character_text if state else None
 
 
+# Character editing state helpers
+def set_original_character_path(tg_id: int, path: Optional[str]) -> None:
+    with SessionLocal() as db:
+        user = db.scalar(select(User).where(User.tg_id == tg_id))
+        if not user:
+            return
+        state = _get_or_create_state(db, user.id)
+        state.original_character_path = path
+        db.commit()
 
+
+def get_original_character_path(tg_id: int) -> Optional[str]:
+    with SessionLocal() as db:
+        user = db.scalar(select(User).where(User.tg_id == tg_id))
+        if not user:
+            return None
+        state = db.scalar(select(UserState).where(UserState.user_id == user.id))
+        return state.original_character_path if state else None
+
+
+def set_edited_character_path(tg_id: int, path: Optional[str]) -> None:
+    with SessionLocal() as db:
+        user = db.scalar(select(User).where(User.tg_id == tg_id))
+        if not user:
+            return
+        state = _get_or_create_state(db, user.id)
+        state.edited_character_path = path
+        db.commit()
+
+
+def get_edited_character_path(tg_id: int) -> Optional[str]:
+    with SessionLocal() as db:
+        user = db.scalar(select(User).where(User.tg_id == tg_id))
+        if not user:
+            return None
+        state = db.scalar(select(UserState).where(UserState.user_id == user.id))
+        return state.edited_character_path if state else None
+
+
+def increment_edit_iteration(tg_id: int) -> None:
+    with SessionLocal() as db:
+        user = db.scalar(select(User).where(User.tg_id == tg_id))
+        if not user:
+            return
+        state = _get_or_create_state(db, user.id)
+        state.edit_iteration_count = (state.edit_iteration_count or 0) + 1
+        db.commit()
+
+
+def clear_edit_session(tg_id: int) -> None:
+    """Clean up temporary edit data"""
+    with SessionLocal() as db:
+        user = db.scalar(select(User).where(User.tg_id == tg_id))
+        if not user:
+            return
+        state = _get_or_create_state(db, user.id)
+        state.original_character_path = None
+        state.edited_character_path = None
+        state.edit_iteration_count = 0
+        db.commit()
 
