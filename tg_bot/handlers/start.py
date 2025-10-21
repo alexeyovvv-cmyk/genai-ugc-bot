@@ -25,10 +25,21 @@ from tg_bot.dispatcher import dp
 @dp.message(CommandStart)
 async def cmd_start(m: Message):
     """Handle /start command"""
+    logger.info(f"🔴 START: Получена команда /start от пользователя {m.from_user.id}")
+    logger.info(f"🔴 START: Пользователь: {m.from_user.first_name} {m.from_user.last_name} (@{m.from_user.username})")
+    logger.info(f"🔴 START: Chat ID: {m.chat.id}, Chat Type: {m.chat.type}")
+    
     from tg_bot.utils.credits import ensure_user
+    logger.info(f"🔴 START: Вызываем ensure_user для пользователя {m.from_user.id}")
     ensure_user(m.from_user.id)
+    logger.info(f"🔴 START: ensure_user завершен для пользователя {m.from_user.id}")
+    
     # track_user_activity(m.from_user.id)  # Отслеживаем активность пользователя - ОТКЛЮЧЕНО
+    logger.info(f"🔴 START: Получаем кредиты для пользователя {m.from_user.id}")
     current_credits = get_credits(m.from_user.id)
+    logger.info(f"🔴 START: Кредиты пользователя {m.from_user.id}: {current_credits}")
+    
+    logger.info(f"🔴 START: Отправляем приветственное сообщение пользователю {m.from_user.id}")
     await m.answer(
         "🎬 <b>Добро пожаловать в сервис Datanauts.co</b>\n\n"
         "Создавайте десятки UGC-like рекламных роликов за считанные минуты с помощью ИИ.\n"
@@ -37,8 +48,31 @@ async def cmd_start(m: Message):
         parse_mode="HTML",
         reply_markup=main_menu()
     )
+    logger.info(f"🔴 START: Приветственное сообщение отправлено пользователю {m.from_user.id}")
 
 
+
+
+@dp.message(F.text)
+async def debug_all_messages(m: Message, state: FSMContext):
+    """DEBUG: Логируем все текстовые сообщения"""
+    current_state = await state.get_state()
+    logger.info(f"🔵 DEBUG: Получено сообщение от {m.from_user.id}: '{m.text}' в состоянии: {current_state}")
+    
+    # Если пользователь не в FSM состоянии, показываем главное меню
+    if not current_state:
+        logger.info(f"🔵 DEBUG: Пользователь {m.from_user.id} не в FSM состоянии, показываем главное меню")
+        from tg_bot.utils.credits import ensure_user, get_credits
+        ensure_user(m.from_user.id)
+        current_credits = get_credits(m.from_user.id)
+        await m.answer(
+            "🎬 <b>Добро пожаловать в сервис Datanauts.co</b>\n\n"
+            "Создавайте десятки UGC-like рекламных роликов за считанные минуты с помощью ИИ.\n"
+            f"У тебя сейчас: <b>{current_credits} кредитов</b>. 1 сгенерированное видео = 1 кредит\n\n"
+            "Выберите действие:",
+            parse_mode="HTML",
+            reply_markup=main_menu()
+        )
 
 
 @dp.callback_query(F.data == "faq")
