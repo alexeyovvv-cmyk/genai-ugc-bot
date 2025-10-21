@@ -4,17 +4,15 @@ from typing import Iterable, Optional
 
 from elevenlabs import ElevenLabs
 from tg_bot.services.r2_service import upload_file
+from tg_bot.utils.logger import setup_logger
+
+logger = setup_logger(__name__)
 
 API_KEY = os.environ.get("ELEVEN_API_KEY") or os.environ.get("ELEVENLABS_API_KEY", "")
 
 AUDIO_DIR = pathlib.Path(os.getenv("BASE_DIR", ".")) / "data" / "audio"
 AUDIO_DIR.mkdir(parents=True, exist_ok=True)
 
-# Заглушечный список не используется для сэмплов (они читаются из файлов).
-DEFAULT_VOICES = [
-    ("Ava",   "EXAMPLE_VOICE_ID_1"),
-    ("Noah",  "EXAMPLE_VOICE_ID_2"),
-]
 
 
 def _synth_sync(text: str, voice_id: str, outfile: str) -> str:
@@ -56,20 +54,20 @@ def _synth_sync(text: str, voice_id: str, outfile: str) -> str:
 async def tts_to_file(text: str, voice_id: str, user_id: Optional[int] = None) -> str:
     """Synthesize speech via ElevenLabs and save to file, returning path."""
     import sys
-    print(f"[TTS] Начинаем генерацию TTS для текста: '{text[:50]}...'", flush=True)
+    logger.info(f"[TTS] Начинаем генерацию TTS для текста: '{text[:50]}...'")
     sys.stderr.write(f"[TTS] Voice ID: {voice_id}\n")
     sys.stderr.flush()
     
     filename = f"tts_{uuid.uuid4().hex}.mp3"
     out_path = str(AUDIO_DIR / filename)
     
-    print(f"[TTS] Путь для сохранения: {out_path}", flush=True)
+    logger.info(f"[TTS] Путь для сохранения: {out_path}")
     sys.stderr.write(f"[TTS] Вызываем API ElevenLabs...\n")
     sys.stderr.flush()
     
     result = await asyncio.to_thread(_synth_sync, text, voice_id, out_path)
     
-    print(f"[TTS] ✅ TTS завершен успешно: {result}", flush=True)
+    logger.info(f"[TTS] ✅ TTS завершен успешно: {result}")
     sys.stderr.write(f"[TTS] ✅ Файл создан\n")
     sys.stderr.flush()
     
@@ -79,12 +77,12 @@ async def tts_to_file(text: str, voice_id: str, user_id: Optional[int] = None) -
             timestamp = int(time.time())
             r2_key = f"temp/{user_id}_{timestamp}/{filename}"
             
-            print(f"[TTS] Uploading to R2: {r2_key}", flush=True)
+            logger.info(f"[TTS] Uploading to R2: {r2_key}")
             if upload_file(result, r2_key):
-                print(f"[TTS] ✅ Uploaded to R2: {r2_key}", flush=True)
+                logger.info(f"[TTS] ✅ Uploaded to R2: {r2_key}")
             else:
-                print(f"[TTS] ⚠️ Failed to upload to R2, keeping local file", flush=True)
+                logger.warning(f"[TTS] ⚠️ Failed to upload to R2, keeping local file")
         except Exception as e:
-            print(f"[TTS] ⚠️ R2 upload error: {e}", flush=True)
+            logger.warning(f"[TTS] ⚠️ R2 upload error: {e}")
     
     return result

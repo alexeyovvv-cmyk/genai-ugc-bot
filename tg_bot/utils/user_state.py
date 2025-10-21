@@ -170,3 +170,88 @@ def clear_edit_session(tg_id: int) -> None:
         state.edit_iteration_count = 0
         db.commit()
 
+
+# Character selection state helpers
+def set_character_gender(tg_id: int, gender: str) -> None:
+    """Set character gender for user"""
+    with SessionLocal() as db:
+        user = db.scalar(select(User).where(User.tg_id == tg_id))
+        if not user:
+            return
+        state = _get_or_create_state(db, user.id)
+        state.character_gender = gender
+        db.commit()
+
+
+def get_character_gender(tg_id: int) -> Optional[str]:
+    """Get character gender for user"""
+    with SessionLocal() as db:
+        user = db.scalar(select(User).where(User.tg_id == tg_id))
+        if not user:
+            return None
+        state = db.scalar(select(UserState).where(UserState.user_id == user.id))
+        return state.character_gender if state else None
+
+
+def set_character_age(tg_id: int, age: str) -> None:
+    """Set character age for user"""
+    with SessionLocal() as db:
+        user = db.scalar(select(User).where(User.tg_id == tg_id))
+        if not user:
+            return
+        state = _get_or_create_state(db, user.id)
+        state.character_age = age
+        db.commit()
+
+
+def get_character_age(tg_id: int) -> Optional[str]:
+    """Get character age for user"""
+    with SessionLocal() as db:
+        user = db.scalar(select(User).where(User.tg_id == tg_id))
+        if not user:
+            return None
+        state = db.scalar(select(UserState).where(UserState.user_id == user.id))
+        return state.character_age if state else None
+
+
+def set_character_page(tg_id: int, page: int) -> None:
+    """Set character page for user"""
+    with SessionLocal() as db:
+        user = db.scalar(select(User).where(User.tg_id == tg_id))
+        if not user:
+            return
+        state = _get_or_create_state(db, user.id)
+        state.character_page = page
+        db.commit()
+
+
+def get_character_page(tg_id: int) -> int:
+    """Get character page for user"""
+    with SessionLocal() as db:
+        user = db.scalar(select(User).where(User.tg_id == tg_id))
+        if not user:
+            return 0
+        state = db.scalar(select(UserState).where(UserState.user_id == user.id))
+        return state.character_page if state and state.character_page is not None else 0
+
+
+def set_voice_page(tg_id: int, page: int) -> None:
+    """Set voice page for user"""
+    with SessionLocal() as db:
+        user = db.scalar(select(User).where(User.tg_id == tg_id))
+        if not user:
+            return
+        state = _get_or_create_state(db, user.id)
+        state.voice_page = page
+        db.commit()
+
+
+def get_voice_page(tg_id: int) -> int:
+    """Get voice page for user"""
+    with SessionLocal() as db:
+        user = db.scalar(select(User).where(User.tg_id == tg_id))
+        if not user:
+            return 0
+        state = db.scalar(select(UserState).where(UserState.user_id == user.id))
+        return state.voice_page if state and state.voice_page is not None else 0
+

@@ -101,21 +101,6 @@ def setup_admin(dp, bot_instance):
         add_credits(tg_id, amount, reason)
         await m.answer(f"OK: +{amount} кредитов для {tg_id} (reason={reason})")
 
-    # Доступно после добавления set_credits в credits.py
-    # @dp.message(Command("credit_set"))
-    # @rate_limited
-    # async def credit_set_cmd(m: Message):
-    #     if not (m.from_user and is_admin(m.from_user.id) and ensure_private_not_forwarded(m)):
-    #         return
-    #     args = parse_args(m.text)
-    #     if len(args) < 2 or not args[0].isdigit() or not args[1].isdigit():
-    #         return await m.answer("Использование: /credit_set <tg_id> <amount> [reason]")
-    #     tg_id = int(args[0]); new_balance = int(args[1]); reason = "admin_set"
-    #     if len(args) >= 3:
-    #         reason = " ".join(args[2:])[:100]
-    #     from tg_bot.utils.credits import set_credits
-    #     set_credits(tg_id, new_balance, reason)
-    #     await m.answer(f"OK: баланс {tg_id} установлен на {new_balance} (reason={reason})")
 
     @dp.message(Command("credit_history"))
     @rate_limited
