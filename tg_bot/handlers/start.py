@@ -8,7 +8,7 @@ This module contains handlers for:
 
 from aiogram import F
 from aiogram.types import Message, CallbackQuery
-from aiogram.filters import CommandStart
+from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
 
 from tg_bot.utils.credits import get_credits
@@ -51,28 +51,6 @@ async def cmd_start(m: Message):
     logger.info(f"🔴 START: Приветственное сообщение отправлено пользователю {m.from_user.id}")
 
 
-
-
-@dp.message(F.text)
-async def debug_all_messages(m: Message, state: FSMContext):
-    """DEBUG: Логируем все текстовые сообщения"""
-    current_state = await state.get_state()
-    logger.info(f"🔵 DEBUG: Получено сообщение от {m.from_user.id}: '{m.text}' в состоянии: {current_state}")
-    
-    # Если пользователь не в FSM состоянии, показываем главное меню
-    if not current_state:
-        logger.info(f"🔵 DEBUG: Пользователь {m.from_user.id} не в FSM состоянии, показываем главное меню")
-        from tg_bot.utils.credits import ensure_user, get_credits
-        ensure_user(m.from_user.id)
-        current_credits = get_credits(m.from_user.id)
-        await m.answer(
-            "🎬 <b>Добро пожаловать в сервис Datanauts.co</b>\n\n"
-            "Создавайте десятки UGC-like рекламных роликов за считанные минуты с помощью ИИ.\n"
-            f"У тебя сейчас: <b>{current_credits} кредитов</b>. 1 сгенерированное видео = 1 кредит\n\n"
-            "Выберите действие:",
-            parse_mode="HTML",
-            reply_markup=main_menu()
-        )
 
 
 @dp.callback_query(F.data == "faq")
