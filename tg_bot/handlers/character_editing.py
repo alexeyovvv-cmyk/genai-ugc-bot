@@ -55,7 +55,7 @@ async def edit_character_no(c: CallbackQuery, state: FSMContext):
     await show_voice_gallery(c, state)
 
 
-@dp.message(F.text, UGCCreation).waiting_edit_prompt
+@dp.message(F.text, UGCCreation.waiting_edit_prompt)
 async def handle_edit_prompt(m: Message, state: FSMContext):
     """Обработка промпта для редактирования персонажа"""
     prompt = m.text.strip()

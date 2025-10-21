@@ -420,7 +420,7 @@ async def change_text_no(c: CallbackQuery, state: FSMContext):
     await c.answer()
 
 
-@dp.message(F.text, UGCCreation).waiting_character_text
+@dp.message(F.text, UGCCreation.waiting_character_text)
 async def character_text_received(m: Message, state: FSMContext):
     """Получен текст от пользователя для генерации аудио"""
     # Сохраняем текст
@@ -502,7 +502,7 @@ async def character_text_received(m: Message, state: FSMContext):
         await state.clear()
 
 
-@dp.message(F.text, UGCCreation).waiting_new_character_text
+@dp.message(F.text, UGCCreation.waiting_new_character_text)
 async def new_character_text_received(m: Message, state: FSMContext):
     """Получен новый текст для переделки аудио"""
     # Сохраняем новый текст

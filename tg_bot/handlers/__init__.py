@@ -26,5 +26,5 @@ def register_all_handlers(dp: Dispatcher):
         navigation
     )
     
-    # Handlers are registered via decorators when modules are imported
-    # No additional registration needed
+    # In aiogram 3.x, handlers are registered automatically via decorators
+    # when modules are imported, so no additional registration is needed

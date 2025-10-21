@@ -43,7 +43,7 @@ async def feedback_write(c: CallbackQuery, state: FSMContext):
     await c.answer()
 
 
-@dp.message(F.chat.type == "private", F.text, Feedback).waiting_message
+@dp.message(F.chat.type == "private", F.text, Feedback.waiting_message)
 async def on_feedback_message(m: Message, state: FSMContext):
     """Handle feedback message from user"""
     ADMIN_FEEDBACK_CHAT_ID = int(os.getenv("ADMIN_FEEDBACK_CHAT_ID", "0"))
