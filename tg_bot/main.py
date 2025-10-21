@@ -1039,7 +1039,7 @@ async def change_text_no(c: CallbackQuery, state: FSMContext):
         traceback.print_exc()
         
         await c.message.answer(
-            f"❌ Ошибка при перегенерации озвучки: {str(e)}\n\n"
+            "❌ Произошла ошибка при генерации озвучки.\n\n"
             "Попробуй еще раз или свяжись с поддержкой.",
             reply_markup=main_menu()
         )
@@ -1159,7 +1159,7 @@ async def new_character_text_received(m: Message, state: FSMContext):
         traceback.print_exc()
         
         await m.answer(
-            f"❌ Ошибка при генерации озвучки: {str(e)}\n\n"
+            "❌ Произошла ошибка при генерации озвучки.\n\n"
             "Попробуй еще раз или свяжись с поддержкой.",
             reply_markup=main_menu()
         )
@@ -1239,7 +1239,7 @@ async def character_text_received(m: Message, state: FSMContext):
         traceback.print_exc()
         
         await m.answer(
-            f"❌ Ошибка при генерации озвучки: {str(e)}\n\n"
+            "❌ Произошла ошибка при генерации озвучки.\n\n"
             "Попробуй еще раз или свяжись с поддержкой.",
             reply_markup=main_menu()
         )
