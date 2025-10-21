@@ -68,12 +68,6 @@ async def edit_character_no(c: CallbackQuery, state: FSMContext):
     await show_voice_gallery(c, state)
 
 
-@dp.message(F.text)
-async def debug_text_handler(m: Message, state: FSMContext):
-    """DEBUG: Обработчик всех текстовых сообщений"""
-    current_state = await state.get_state()
-    logger.info(f"🔵 DEBUG: Получено текстовое сообщение от {m.from_user.id}: '{m.text}' в состоянии: {current_state}")
-
 @dp.message(F.text, UGCCreation.waiting_edit_prompt)
 async def handle_edit_prompt(m: Message, state: FSMContext):
     """Обработка промпта для редактирования персонажа"""

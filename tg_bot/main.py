@@ -54,6 +54,18 @@ try:
 except Exception as e:
     logger.warning(f"Statistics scheduler not initialized: {e}")
 
+# Setup FSM storage and middleware
+from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.fsm.middleware import FSMContextMiddleware
+
+# Create FSM storage
+storage = MemoryStorage()
+dp.storage = storage
+
+# Add FSM middleware
+dp.message.middleware(FSMContextMiddleware(storage))
+dp.callback_query.middleware(FSMContextMiddleware(storage))
+
 # Register all handlers
 register_all_handlers(dp)
 
