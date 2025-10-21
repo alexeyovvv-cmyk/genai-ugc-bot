@@ -39,6 +39,7 @@ from tg_bot.utils.files import (
 )
 from tg_bot.utils.voices import list_voice_samples, get_voice_sample, list_all_voice_samples
 from tg_bot.utils.audio import check_audio_duration_limit
+from tg_bot.utils.user_storage import get_user_generations, get_user_storage_stats
 from tg_bot.utils.user_state import (
     set_selected_character,
     get_selected_character,
@@ -385,6 +386,62 @@ async def show_faq(c: CallbackQuery):
 Если возникли вопросы — пиши в поддержку!
 """
     await c.message.answer(faq_text, parse_mode="HTML", reply_markup=back_to_main_menu())
+    await c.answer()
+
+# --- My Generations ---
+@dp.callback_query(F.data == "my_generations")
+async def show_my_generations(c: CallbackQuery):
+    """Показать историю генераций пользователя"""
+    try:
+        user_id = c.from_user.id
+        ensure_user(user_id)
+        
+        # Получаем историю генераций
+        generations = get_user_generations(user_id, limit=10)
+        
+        if not generations:
+            await c.message.answer(
+                "📁 <b>Мои генерации</b>\n\n"
+                "У вас пока нет созданных видео.\n"
+                "Создайте свою первую UGC рекламу!",
+                parse_mode="HTML",
+                reply_markup=back_to_main_menu()
+            )
+            return await c.answer()
+        
+        # Формируем сообщение с историей
+        message_text = "📁 <b>Мои генерации</b>\n\n"
+        
+        for i, gen in enumerate(generations, 1):
+            created_at = gen['created_at'].strftime('%d.%m.%Y %H:%M')
+            character_info = f"{gen['character_gender']}/{gen['character_age']}" if gen['character_gender'] else "Неизвестно"
+            
+            message_text += f"{i}. <b>{created_at}</b>\n"
+            message_text += f"   👤 Персонаж: {character_info}\n"
+            if gen['text_prompt']:
+                message_text += f"   💬 Текст: {gen['text_prompt'][:50]}{'...' if len(gen['text_prompt']) > 50 else ''}\n"
+            message_text += f"   💰 Потрачено: {gen['credits_spent']} кредит(ов)\n\n"
+        
+        # Добавляем статистику
+        stats = get_user_storage_stats(user_id)
+        message_text += f"📊 <b>Статистика:</b>\n"
+        message_text += f"   Всего генераций: {stats['total_generations']}\n"
+        message_text += f"   Потрачено кредитов: {stats['total_credits_spent']}\n"
+        
+        await c.message.answer(
+            message_text,
+            parse_mode="HTML",
+            reply_markup=back_to_main_menu()
+        )
+        
+    except Exception as e:
+        print(f"[MY_GENERATIONS] Error: {e}")
+        await c.message.answer(
+            "❌ Произошла ошибка при загрузке истории генераций.\n\n"
+            "Попробуйте позже или свяжитесь с поддержкой.",
+            reply_markup=back_to_main_menu()
+        )
+    
     await c.answer()
 
 # --- UGC Creation Flow ---
@@ -890,6 +947,23 @@ async def audio_confirmed(c: CallbackQuery, state: FSMContext):
                 caption=f"🎉 Твоя UGC реклама готова!\n\n(-{COST_UGC_VIDEO} кредит списан)"
             )
             log(f"[UGC] ✅ Видео отправлено успешно")
+            
+            # Сохраняем генерацию в историю
+            try:
+                from tg_bot.utils.user_storage import save_user_generation
+                save_user_generation(
+                    user_id=c.from_user.id,
+                    generation_type='video',
+                    video_r2_key=None,  # TODO: сохранить R2 ключ после миграции
+                    audio_r2_key=None,  # TODO: сохранить R2 ключ после миграции
+                    character_gender=get_character_gender(c.from_user.id),
+                    character_age=get_character_age(c.from_user.id),
+                    text_prompt=get_character_text(c.from_user.id),
+                    credits_spent=COST_UGC_VIDEO
+                )
+                log(f"[UGC] ✅ Генерация сохранена в историю")
+            except Exception as save_error:
+                log(f"[UGC] ⚠️ Не удалось сохранить генерацию в историю: {save_error}")
             
             # Удаляем видео файл после отправки
             try:

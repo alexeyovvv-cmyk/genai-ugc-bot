@@ -18,7 +18,11 @@ def main_menu():
         ],
         # Второй ряд - дополнительная информация
         [
-            InlineKeyboardButton(text="❓ FAQ", callback_data="faq"),
+            InlineKeyboardButton(text="📁 Мои генерации", callback_data="my_generations"),
+            InlineKeyboardButton(text="❓ FAQ", callback_data="faq")
+        ],
+        # Третий ряд - обратная связь
+        [
             InlineKeyboardButton(text="✉️ Обратная связь", callback_data="feedback")
         ]
     ])
