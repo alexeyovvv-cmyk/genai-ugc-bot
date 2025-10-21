@@ -1,8 +1,9 @@
 """ElevenLabs TTS utilities."""
-import os, uuid, pathlib, asyncio
-from typing import Iterable
+import os, uuid, pathlib, asyncio, time
+from typing import Iterable, Optional
 
 from elevenlabs import ElevenLabs
+from tg_bot.services.r2_service import upload_file
 
 API_KEY = os.environ.get("ELEVEN_API_KEY") or os.environ.get("ELEVENLABS_API_KEY", "")
 
@@ -52,7 +53,7 @@ def _synth_sync(text: str, voice_id: str, outfile: str) -> str:
     return outfile
 
 
-async def tts_to_file(text: str, voice_id: str) -> str:
+async def tts_to_file(text: str, voice_id: str, user_id: Optional[int] = None) -> str:
     """Synthesize speech via ElevenLabs and save to file, returning path."""
     import sys
     print(f"[TTS] Начинаем генерацию TTS для текста: '{text[:50]}...'", flush=True)
@@ -71,5 +72,19 @@ async def tts_to_file(text: str, voice_id: str) -> str:
     print(f"[TTS] ✅ TTS завершен успешно: {result}", flush=True)
     sys.stderr.write(f"[TTS] ✅ Файл создан\n")
     sys.stderr.flush()
+    
+    # Upload to R2 if user_id provided
+    if user_id:
+        try:
+            timestamp = int(time.time())
+            r2_key = f"temp/{user_id}_{timestamp}/{filename}"
+            
+            print(f"[TTS] Uploading to R2: {r2_key}", flush=True)
+            if upload_file(result, r2_key):
+                print(f"[TTS] ✅ Uploaded to R2: {r2_key}", flush=True)
+            else:
+                print(f"[TTS] ⚠️ Failed to upload to R2, keeping local file", flush=True)
+        except Exception as e:
+            print(f"[TTS] ⚠️ R2 upload error: {e}", flush=True)
     
     return result

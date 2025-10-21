@@ -6,6 +6,7 @@ import time
 import requests
 from typing import Optional
 from dotenv import load_dotenv
+from tg_bot.services.r2_service import upload_file, get_presigned_url
 
 load_dotenv()
 
@@ -19,6 +20,7 @@ VIDEO_DIR.mkdir(parents=True, exist_ok=True)
 async def generate_talking_head_video(
     audio_path: str,
     image_path: str,
+    user_id: Optional[int] = None,
 ) -> Optional[str]:
     """
     Generate talking head video using fal.ai OmniHuman model.
@@ -50,6 +52,38 @@ async def generate_talking_head_video(
         
         if video_path:
             print(f"[FALAI] ✅ Video generated successfully: {video_path}", flush=True)
+            
+            # Upload to R2 if user_id provided
+            if user_id:
+                try:
+                    timestamp = int(time.time())
+                    video_filename = f"datanauts_ugcad_{timestamp}.mp4"
+                    r2_video_key = f"users/{user_id}/generated_videos/{video_filename}"
+                    
+                    print(f"[FALAI] Uploading video to R2: {r2_video_key}", flush=True)
+                    if upload_file(video_path, r2_video_key):
+                        print(f"[FALAI] ✅ Video uploaded to R2: {r2_video_key}", flush=True)
+                        
+                        # Upload audio to permanent location too
+                        audio_filename = f"tts_audio_{timestamp}.mp3"
+                        r2_audio_key = f"users/{user_id}/generated_audio/{audio_filename}"
+                        
+                        print(f"[FALAI] Uploading audio to R2: {r2_audio_key}", flush=True)
+                        if upload_file(audio_path, r2_audio_key):
+                            print(f"[FALAI] ✅ Audio uploaded to R2: {r2_audio_key}", flush=True)
+                        
+                        # Return R2 presigned URL instead of local path
+                        video_url = get_presigned_url(r2_video_key, expiry_hours=24)
+                        if video_url:
+                            print(f"[FALAI] ✅ Generated presigned URL for video", flush=True)
+                            return video_url
+                        else:
+                            print(f"[FALAI] ⚠️ Failed to generate presigned URL, returning local path", flush=True)
+                    else:
+                        print(f"[FALAI] ⚠️ Failed to upload to R2, returning local path", flush=True)
+                except Exception as e:
+                    print(f"[FALAI] ⚠️ R2 upload error: {e}", flush=True)
+            
             return video_path
         else:
             print("[FALAI] ❌ Video generation failed", flush=True)

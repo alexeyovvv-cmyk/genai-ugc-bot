@@ -19,7 +19,12 @@ class Asset(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     type: Mapped[str] = mapped_column(String)  # image|audio|video
-    path: Mapped[str] = mapped_column(String)  # локальный путь к файлу
+    path: Mapped[str] = mapped_column(String)  # локальный путь к файлу (backward compatibility)
+    r2_key: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # R2 object key
+    r2_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # cached presigned URL
+    r2_url_expires_at: Mapped[Optional[DateTime]] = mapped_column(DateTime, nullable=True)  # URL expiry
+    file_size: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # size in bytes
+    version: Mapped[int] = mapped_column(Integer, default=1)  # for avatar versioning
     meta_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     created_at: Mapped[str] = mapped_column(DateTime, server_default=func.now())
 
@@ -55,3 +60,17 @@ class UserActivity(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     last_activity_date: Mapped[str] = mapped_column(String)  # DATE as string YYYY-MM-DD
     created_at: Mapped[str] = mapped_column(DateTime, server_default=func.now())
+
+class GenerationHistory(Base):
+    __tablename__ = "generation_history"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    generation_type: Mapped[str] = mapped_column(String)  # 'video', 'audio', 'avatar_edit'
+    r2_video_key: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    r2_audio_key: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    r2_image_key: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    character_gender: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    character_age: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    text_prompt: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    credits_spent: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[DateTime] = mapped_column(DateTime, server_default=func.now())

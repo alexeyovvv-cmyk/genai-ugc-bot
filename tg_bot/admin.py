@@ -1,6 +1,7 @@
 import os
 import time
 import functools
+from aiogram import Dispatcher
 from aiogram.filters import Command
 from aiogram.types import Message
 from sqlalchemy import select
@@ -8,6 +9,11 @@ from sqlalchemy import select
 from tg_bot.utils.credits import get_credits, add_credits
 from tg_bot.db import SessionLocal
 from tg_bot.models import User, CreditLog
+from tg_bot.utils.storage_stats import format_storage_summary, get_temp_file_stats
+from tg_bot.services.r2_service import cleanup_temp_files, test_connection
+
+# Create dispatcher instance
+dp = Dispatcher()
 
 
 ADMIN_TG_IDS = set(int(x) for x in os.getenv("ADMIN_TG_IDS", "").split(',') if x.strip())
@@ -229,6 +235,63 @@ def setup_admin(dp, bot_instance):
 • Отсутствующие зависимости"""
             
             await m.answer(error_report, parse_mode="HTML")
-            print(f"[ADMIN_STATS] Detailed error report sent to admin {m.from_user.id if m.from_user else 'unknown'}")
 
+@dp.message(Command("storage"))
+async def admin_storage(m: Message):
+    """Показать статистику R2 хранилища"""
+    if not is_admin(m.from_user.id):
+        await m.answer("❌ У вас нет прав администратора")
+        return
+    
+    try:
+        summary = format_storage_summary()
+        await m.answer(summary, parse_mode="Markdown")
+    except Exception as e:
+        await m.answer(f"❌ Ошибка при получении статистики хранилища: {e}")
+
+@dp.message(Command("cleanup_temp"))
+async def admin_cleanup_temp(m: Message):
+    """Очистить временные файлы вручную"""
+    if not is_admin(m.from_user.id):
+        await m.answer("❌ У вас нет прав администратора")
+        return
+    
+    try:
+        # Get stats before cleanup
+        temp_stats_before = get_temp_file_stats()
+        
+        # Run cleanup
+        cleanup_stats = cleanup_temp_files()
+        
+        # Format response
+        response = f"""🧹 **Очистка временных файлов**
+
+**До очистки:**
+• Файлов: {temp_stats_before.get('total_files', 0):,}
+• Размер: {temp_stats_before.get('total_size_mb', 0):.2f} MB
+
+**Результат очистки:**
+• Удалено файлов: {cleanup_stats['deleted_files']}
+• Освобождено места: {cleanup_stats['deleted_size_mb']:.2f} MB
+
+✅ Очистка завершена"""
+        
+        await m.answer(response, parse_mode="Markdown")
+    except Exception as e:
+        await m.answer(f"❌ Ошибка при очистке временных файлов: {e}")
+
+@dp.message(Command("r2_test"))
+async def admin_r2_test(m: Message):
+    """Тест подключения к R2"""
+    if not is_admin(m.from_user.id):
+        await m.answer("❌ У вас нет прав администратора")
+        return
+    
+    try:
+        if test_connection():
+            await m.answer("✅ Подключение к R2 успешно")
+        else:
+            await m.answer("❌ Ошибка подключения к R2")
+    except Exception as e:
+        await m.answer(f"❌ Ошибка тестирования R2: {e}")
 

@@ -4,6 +4,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 import pytz
 from tg_bot.utils.statistics import generate_statistics_report
+from tg_bot.services.r2_service import cleanup_temp_files
 
 
 async def send_daily_statistics(bot):
@@ -71,6 +72,23 @@ async def send_daily_statistics(bot):
             print(f"[SCHEDULER] ❌ Failed to send error report: {send_error}")
 
 
+async def cleanup_temp_files_job(bot):
+    """Cleanup temporary files older than 24 hours."""
+    try:
+        print(f"[SCHEDULER] Running temp files cleanup job at {datetime.now()}")
+        
+        # Run R2 cleanup
+        cleanup_stats = cleanup_temp_files()
+        
+        if cleanup_stats['deleted_files'] > 0:
+            print(f"[SCHEDULER] ✅ Cleaned up {cleanup_stats['deleted_files']} temp files ({cleanup_stats['deleted_size_mb']} MB)")
+        else:
+            print(f"[SCHEDULER] ✅ No temp files to clean up")
+            
+    except Exception as e:
+        print(f"[SCHEDULER] ❌ Temp files cleanup job failed: {e}")
+
+
 def setup_scheduler(bot):
     """Инициализирует планировщик для отправки ежедневной статистики"""
     scheduler = AsyncIOScheduler()
@@ -90,8 +108,24 @@ def setup_scheduler(bot):
         max_instances=1
     )
     
+    # Add temp files cleanup job (runs every 6 hours)
+    scheduler.add_job(
+        func=cleanup_temp_files_job,
+        args=[bot],
+        trigger=CronTrigger(
+            hour='0,6,12,18',
+            minute=0,
+            timezone=pytz.timezone('UTC')
+        ),
+        id='cleanup_temp_files',
+        name='Cleanup Temporary Files',
+        replace_existing=True,
+        max_instances=1
+    )
+    
     # Запускаем планировщик
     scheduler.start()
     print("[SCHEDULER] Daily statistics scheduler started (19:00 MSK)")
+    print("[SCHEDULER] Temp files cleanup scheduler started (every 6 hours UTC)")
     
     return scheduler
