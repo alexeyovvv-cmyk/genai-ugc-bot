@@ -82,7 +82,27 @@ def get_character_image(gender: str, age: str, index: int) -> Optional[str]:
     try:
         images, _ = list_character_images(gender, age, page=0, limit=1000)  # Получаем все
         if 0 <= index < len(images):
-            return images[index]
+            image_key = images[index]
+            
+            # Если это R2 ключ, скачиваем файл во временную папку
+            if image_key.startswith('presets/'):
+                from tg_bot.services.r2_service import download_file
+                import tempfile
+                import os
+                
+                # Создаем временный файл
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as temp_file:
+                    temp_path = temp_file.name
+                
+                # Скачиваем файл из R2
+                if download_file(image_key, temp_path):
+                    return temp_path
+                else:
+                    print(f"Failed to download R2 file: {image_key}")
+                    return None
+            else:
+                # Это локальный путь
+                return image_key
         return None
     except Exception as e:
         print(f"Error getting character image: {e}")

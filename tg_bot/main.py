@@ -512,13 +512,49 @@ async def show_character_gallery(c: CallbackQuery, state: FSMContext):
     for idx, image_path in enumerate(images):
         global_index = page * 5 + idx
         caption = None
-        media.append(
-            InputMediaPhoto(
-                media=FSInputFile(image_path),
-                caption=caption
+        
+        # Проверяем, является ли путь R2 ключом или локальным путем
+        if image_path.startswith('presets/'):
+            # Это R2 ключ, нужно скачать файл или использовать presigned URL
+            from tg_bot.utils.files import get_character_image_url
+            from tg_bot.services.r2_service import download_file
+            import tempfile
+            import os
+            
+            # Создаем временный файл
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as temp_file:
+                temp_path = temp_file.name
+            
+            # Скачиваем файл из R2
+            if download_file(image_path, temp_path):
+                media.append(
+                    InputMediaPhoto(
+                        media=FSInputFile(temp_path),
+                        caption=caption
+                    )
+                )
+            else:
+                print(f"Failed to download R2 file: {image_path}")
+                continue
+        else:
+            # Это локальный путь
+            media.append(
+                InputMediaPhoto(
+                    media=FSInputFile(image_path),
+                    caption=caption
+                )
             )
-        )
-    await c.message.answer_media_group(media)
+    
+    if media:
+        await c.message.answer_media_group(media)
+        
+        # Очищаем временные файлы
+        for item in media:
+            if hasattr(item.media, 'path') and item.media.path.startswith('/tmp'):
+                try:
+                    os.unlink(item.media.path)
+                except:
+                    pass
     
     # Отправляем меню с навигацией
     await c.message.answer(

@@ -130,12 +130,32 @@ def get_voice_sample(gender: str, age: str, index: int) -> Optional[Tuple[str, s
         index: индекс голоса
     
     Returns:
-        Optional[Tuple[str, str, str]]: (name, voice_id, r2_key) или None
+        Optional[Tuple[str, str, str]]: (name, voice_id, local_path) или None
     """
     try:
         voices, _ = list_voice_samples(gender, age, page=0, limit=1000)  # Получаем все
         if 0 <= index < len(voices):
-            return voices[index]
+            name, voice_id, voice_key = voices[index]
+            
+            # Если это R2 ключ, скачиваем файл во временную папку
+            if voice_key.startswith('presets/'):
+                from tg_bot.services.r2_service import download_file
+                import tempfile
+                import os
+                
+                # Создаем временный файл
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as temp_file:
+                    temp_path = temp_file.name
+                
+                # Скачиваем файл из R2
+                if download_file(voice_key, temp_path):
+                    return (name, voice_id, temp_path)
+                else:
+                    print(f"Failed to download R2 file: {voice_key}")
+                    return None
+            else:
+                # Это локальный путь
+                return (name, voice_id, voice_key)
         return None
     except Exception as e:
         print(f"Error getting voice sample: {e}")
