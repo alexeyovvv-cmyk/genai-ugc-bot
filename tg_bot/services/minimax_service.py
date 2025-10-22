@@ -83,6 +83,7 @@ def _synth_sync(text: str, voice_id: str, language: str = "auto", emotion: str =
         if not audio_url:
             sys.stderr.write(f"[TTS] ❌ Не найден URL аудио в результате: {result}\n")
             sys.stderr.flush()
+            logger.error(f"[TTS] Audio URL not found in MiniMax response: {result}")
             raise ValueError("Audio URL not found in API response")
         
         sys.stderr.write(f"[TTS] Скачиваем аудио с URL: {audio_url}\n")
@@ -116,7 +117,16 @@ def _synth_sync(text: str, voice_id: str, language: str = "auto", emotion: str =
     except Exception as e:
         sys.stderr.write(f"[TTS] ❌ Ошибка в MiniMax генерации: {e}\n")
         sys.stderr.flush()
-        raise
+        # Логируем полную ошибку для разработки, но не показываем пользователю
+        logger.error(f"[TTS] MiniMax API error: {e}")
+        
+        # Преобразуем технические ошибки в понятные для пользователя
+        if "Exhausted balance" in str(e) or "User is locked" in str(e):
+            raise Exception("TTS service temporarily unavailable")
+        elif "API" in str(e) or "fal.ai" in str(e):
+            raise Exception("TTS service error")
+        else:
+            raise
 
 
 async def tts_to_file(text: str, voice_id: str, language: str = "auto", emotion: str = "neutral", user_id: Optional[int] = None) -> str:

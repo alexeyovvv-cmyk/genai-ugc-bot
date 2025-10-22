@@ -67,28 +67,28 @@ async def character_text_received(m: Message, state: FSMContext):
     logger.info(f"[UGC] Автовыбор голоса: gender={gender}, voice_id={voice_id}")
     
     try:
-        # Проверяем кредиты
+    # Проверяем кредиты
         credits = get_credits(m.from_user.id)
-        if credits < COST_UGC_VIDEO:
+    if credits < COST_UGC_VIDEO:
             await m.answer(
-                f"❌ Недостаточно кредитов (нужно {COST_UGC_VIDEO} кредит).\n\n"
-                "Свяжись с администратором для пополнения.",
-                reply_markup=main_menu()
-            )
-            await state.clear()
-            return
-        
-        # Списываем кредит
+            f"❌ Недостаточно кредитов (нужно {COST_UGC_VIDEO} кредит).\n\n"
+            "Свяжись с администратором для пополнения.",
+            reply_markup=main_menu()
+        )
+        await state.clear()
+        return
+    
+    # Списываем кредит
         ok = spend_credits(m.from_user.id, COST_UGC_VIDEO, "ugc_video_creation")
-        if not ok:
+    if not ok:
             await m.answer(
-                "❌ Ошибка при списании кредита.\n\n"
-                "Свяжись с администратором.",
-                reply_markup=main_menu()
-            )
-            await state.clear()
-            return
-        
+            "❌ Ошибка при списании кредита.\n\n"
+            "Свяжись с администратором.",
+            reply_markup=main_menu()
+        )
+        await state.clear()
+        return
+    
         # Генерируем аудио (не показываем пользователю)
         await m.answer("🎤 Генерирую озвучку...")
         logger.info(f"[UGC] Генерация MiniMax TTS для пользователя {m.from_user.id}, voice_id={voice_id}")
@@ -182,7 +182,6 @@ async def character_text_received(m: Message, state: FSMContext):
         logger.info(f"[UGC] Выбран кадр: {selected_frame}")
         
         # Генерируем видео с помощью fal.ai OmniHuman
-        await m.answer("🎬 Создаю UGC рекламу с синхронизацией губ... (это может занять 2-3 минуты)")
         logger.info(f"[UGC] Начинаем генерацию talking head видео через fal.ai...")
         logger.info(f"[UGC] Стартовый кадр: {selected_frame}")
         logger.info(f"[UGC] Аудио файл: {audio_path}")
@@ -326,9 +325,17 @@ async def character_text_received(m: Message, state: FSMContext):
         except Exception as cleanup_error:
             logger.info(f"[UGC] ⚠️ Не удалось очистить временные файлы при ошибке: {cleanup_error}")
         
+        # Скрываем технические ошибки от пользователей
+        error_message = "❌ Произошла ошибка при создании видео"
+        if "Exhausted balance" in str(e) or "User is locked" in str(e) or "TTS service temporarily unavailable" in str(e):
+            error_message += "\n\n🔧 Сервис временно недоступен. Попробуй позже."
+        elif "API" in str(e) or "fal.ai" in str(e) or "TTS service error" in str(e):
+            error_message += "\n\n🔧 Проблема с сервисом генерации. Попробуй позже."
+        else:
+            error_message += "\n\nПопробуй еще раз или свяжись с администратором."
+        
         await m.answer(
-            f"❌ Произошла ошибка при создании видео:\n\n{str(e)}\n\n"
-            "Попробуй еще раз или свяжись с администратором.",
+            error_message,
             reply_markup=main_menu()
         )
         await state.clear()
