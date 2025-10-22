@@ -226,5 +226,11 @@ def _sync_generate_talking_head(audio_path: str, image_path: str) -> Optional[st
         print(f"[FALAI] Error in OmniHuman generation: {e}")
         import traceback
         traceback.print_exc()
+        
+        # Специальная обработка для content policy violation
+        if "content_policy_violation" in str(e) or "content checker" in str(e):
+            print(f"[FALAI] ❌ Content policy violation - изображение заблокировано")
+            raise Exception("Изображение персонажа заблокировано системой безопасности. Попробуйте другого персонажа.")
+        
         return None
 

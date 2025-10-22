@@ -195,6 +195,7 @@ async def character_text_received(m: Message, state: FSMContext):
             )
             
             if not video_result:
+                logger.error(f"[UGC] ❌ generate_talking_head_video вернул None")
                 raise Exception("Не удалось сгенерировать видео")
             
             video_path = video_result['local_path']
@@ -209,12 +210,12 @@ async def character_text_received(m: Message, state: FSMContext):
             else:
                 logger.info(f"[UGC] ⚠️ R2 Video Key is None - video not saved to R2")
         except Exception as video_error:
-            logger.info(f"[UGC] ❌ Ошибка при генерации видео: {video_error}")
+            logger.error(f"[UGC] ❌ Ошибка при генерации видео: {video_error}")
             import traceback
             traceback.print_exc()
             # Авто-рефанд кредита при неуспехе генерации
             add_credits(m.from_user.id, COST_UGC_VIDEO, "refund_ugc_fail")
-            raise Exception(f"Ошибка генерации видео: {str(video_error)}")
+            raise video_error  # Перебрасываем оригинальную ошибку без обертки
         
         if video_path:
             await m.answer("✅ Отправляю готовое видео...")
@@ -329,15 +330,33 @@ async def character_text_received(m: Message, state: FSMContext):
         error_message = "❌ Произошла ошибка при создании видео"
         if "Exhausted balance" in str(e) or "User is locked" in str(e) or "TTS service temporarily unavailable" in str(e):
             error_message += "\n\n🔧 Сервис временно недоступен. Попробуй позже."
-        elif "API" in str(e) or "fal.ai" in str(e) or "TTS service error" in str(e):
-            error_message += "\n\n🔧 Проблема с сервисом генерации. Попробуй позже."
+        elif "заблокировано системой безопасности" in str(e) or "content_policy_violation" in str(e):
+            error_message += "\n\n🚫 Изображение персонажа заблокировано системой безопасности.\n\nПопробуй выбрать другого персонажа."
+            
+            # Возвращаем кредит
+            add_credits(m.from_user.id, COST_UGC_VIDEO, "refund_content_policy_violation")
+            
+            # Очищаем состояние и возвращаем к выбору персонажа
+            await state.clear()
+            await m.answer(
+                error_message,
+                reply_markup=main_menu()
+            )
+            
+            # Переходим к выбору персонажа
+            from tg_bot.handlers.character_selection import show_character_selection
+            await show_character_selection(m)
+            return
         else:
-            error_message += "\n\nПопробуй еще раз или свяжись с администратором."
-        
-        await m.answer(
-            error_message,
-            reply_markup=main_menu()
-        )
-        await state.clear()
+            if "API" in str(e) or "fal.ai" in str(e) or "TTS service error" in str(e):
+                error_message += "\n\n🔧 Проблема с сервисом генерации. Попробуй позже."
+            else:
+                error_message += "\n\nПопробуй еще раз или свяжись с администратором."
+            
+            await m.answer(
+                error_message,
+                reply_markup=main_menu()
+            )
+            await state.clear()
 
 
