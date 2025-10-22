@@ -338,14 +338,16 @@ async def character_text_received(m: Message, state: FSMContext):
             
             # Очищаем состояние и возвращаем к выбору персонажа
             await state.clear()
-            await m.answer(
-                error_message,
-                reply_markup=main_menu()
-            )
             
-            # Переходим к выбору персонажа
-            from tg_bot.handlers.character_selection import show_character_selection
-            await show_character_selection(m)
+            # Отправляем сообщение с кнопкой выбора персонажа
+            from tg_bot.keyboards import gender_selection_menu
+            await m.answer(
+                "🚫 <b>Изображение персонажа заблокировано системой безопасности</b>\n\n"
+                "Попробуй выбрать другого персонажа:",
+                parse_mode="HTML",
+                reply_markup=gender_selection_menu()
+            )
+            await state.set_state(UGCCreation.waiting_gender_selection)
             return
         else:
             if "API" in str(e) or "fal.ai" in str(e) or "TTS service error" in str(e):
