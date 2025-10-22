@@ -67,27 +67,27 @@ async def character_text_received(m: Message, state: FSMContext):
     logger.info(f"[UGC] Автовыбор голоса: gender={gender}, voice_id={voice_id}")
     
     try:
-    # Проверяем кредиты
+        # Проверяем кредиты
         credits = get_credits(m.from_user.id)
-    if credits < COST_UGC_VIDEO:
+        if credits < COST_UGC_VIDEO:
             await m.answer(
-            f"❌ Недостаточно кредитов (нужно {COST_UGC_VIDEO} кредит).\n\n"
-            "Свяжись с администратором для пополнения.",
-            reply_markup=main_menu()
-        )
-        await state.clear()
-        return
-    
-    # Списываем кредит
+                f"❌ Недостаточно кредитов (нужно {COST_UGC_VIDEO} кредит).\n\n"
+                "Свяжись с администратором для пополнения.",
+                reply_markup=main_menu()
+            )
+            await state.clear()
+            return
+        
+        # Списываем кредит
         ok = spend_credits(m.from_user.id, COST_UGC_VIDEO, "ugc_video_creation")
-    if not ok:
+        if not ok:
             await m.answer(
-            "❌ Ошибка при списании кредита.\n\n"
-            "Свяжись с администратором.",
-            reply_markup=main_menu()
-        )
-        await state.clear()
-        return
+                "❌ Ошибка при списании кредита.\n\n"
+                "Свяжись с администратором.",
+                reply_markup=main_menu()
+            )
+            await state.clear()
+            return
     
         # Генерируем аудио (не показываем пользователю)
         await m.answer("🎤 Генерирую озвучку...")

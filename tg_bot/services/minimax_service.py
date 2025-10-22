@@ -9,13 +9,14 @@ from typing import Optional
 
 from tg_bot.services.r2_service import upload_file
 from tg_bot.utils.logger import setup_logger
+from tg_bot.config import BASE_DIR
 
 logger = setup_logger(__name__)
 
 # Use the same FAL_KEY as video generation
 FAL_API_KEY = os.environ.get("FALAI_API_TOKEN") or os.environ.get("FAL_KEY", "")
 
-AUDIO_DIR = pathlib.Path(os.getenv("BASE_DIR", ".")) / "data" / "audio"
+AUDIO_DIR = BASE_DIR / "data" / "audio"
 AUDIO_DIR.mkdir(parents=True, exist_ok=True)
 
 

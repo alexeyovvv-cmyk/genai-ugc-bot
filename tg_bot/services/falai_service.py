@@ -7,13 +7,14 @@ import requests
 from typing import Optional
 from dotenv import load_dotenv
 from tg_bot.services.r2_service import upload_file, get_presigned_url
+from tg_bot.config import BASE_DIR
 
 load_dotenv()
 
 # Configuration
 # Support both FALAI_API_TOKEN and FAL_KEY
 FAL_API_KEY = os.getenv("FALAI_API_TOKEN") or os.getenv("FAL_KEY", "")
-VIDEO_DIR = pathlib.Path(os.getenv("BASE_DIR", ".")) / "data" / "video"
+VIDEO_DIR = BASE_DIR / "data" / "video"
 VIDEO_DIR.mkdir(parents=True, exist_ok=True)
 
 
