@@ -21,7 +21,7 @@ from tg_bot.utils.user_state import (
 )
 from tg_bot.services.nano_banana_service import edit_character_image
 from tg_bot.keyboards import (
-    edit_result_menu, edit_error_menu
+    edit_result_menu, edit_error_menu, back_to_main_menu
 )
 from tg_bot.utils.logger import setup_logger
 from tg_bot.dispatcher import dp
@@ -61,12 +61,19 @@ async def edit_character_yes(c: CallbackQuery, state: FSMContext):
 @dp.callback_query(F.data == "edit_character_no")
 async def edit_character_no(c: CallbackQuery, state: FSMContext):
     """Пользователь не хочет редактировать персонажа"""
-    logger.info(f"User {c.from_user.id} пропустил редактирование персонажа, переходим к выбору голоса")
+    logger.info(f"User {c.from_user.id} пропустил редактирование персонажа, переходим к запросу текста")
     # Очищаем сессию редактирования
     clear_edit_session(c.from_user.id)
-    # Переходим к выбору голоса
-    from tg_bot.handlers.voice_selection import show_voice_gallery
-    await show_voice_gallery(c, state)
+    # Переходим к запросу текста
+    await c.message.answer(
+        "📝 Отлично! Теперь опиши, что должен сказать персонаж.\n\n"
+        "💡 Рекомендация: текст должен занимать не более 15 секунд озвучки.\n\n"
+        "Например: 'Привет! Попробуй наш новый продукт со скидкой 20%!'",
+        parse_mode="HTML",
+        reply_markup=back_to_main_menu()
+    )
+    await state.set_state(UGCCreation.waiting_character_text)
+    await c.answer()
 
 
 @dp.message(StateFilter(UGCCreation.waiting_edit_prompt), F.text)
@@ -215,9 +222,16 @@ async def use_edited_character(c: CallbackQuery, state: FSMContext):
     except Exception as e:
         logger.warning(f"Ошибка при очистке временных файлов: {e}")
     
-    # Переходим к выбору голоса
-    from tg_bot.handlers.voice_selection import show_voice_gallery
-    await show_voice_gallery(c, state)
+    # Переходим к запросу текста
+    await c.message.answer(
+        "📝 Отлично! Теперь опиши, что должен сказать персонаж.\n\n"
+        "💡 Рекомендация: текст должен занимать не более 15 секунд озвучки.\n\n"
+        "Например: 'Привет! Попробуй наш новый продукт со скидкой 20%!'",
+        parse_mode="HTML",
+        reply_markup=back_to_main_menu()
+    )
+    await state.set_state(UGCCreation.waiting_character_text)
+    await c.answer()
 
 
 @dp.callback_query(F.data == "use_original_character")
@@ -257,9 +271,16 @@ async def use_original_character(c: CallbackQuery, state: FSMContext):
     except Exception as e:
         logger.warning(f"Ошибка при очистке временных файлов: {e}")
     
-    # Переходим к выбору голоса
-    from tg_bot.handlers.voice_selection import show_voice_gallery
-    await show_voice_gallery(c, state)
+    # Переходим к запросу текста
+    await c.message.answer(
+        "📝 Отлично! Теперь опиши, что должен сказать персонаж.\n\n"
+        "💡 Рекомендация: текст должен занимать не более 15 секунд озвучки.\n\n"
+        "Например: 'Привет! Попробуй наш новый продукт со скидкой 20%!'",
+        parse_mode="HTML",
+        reply_markup=back_to_main_menu()
+    )
+    await state.set_state(UGCCreation.waiting_character_text)
+    await c.answer()
 
 
 @dp.callback_query(F.data == "continue_editing")
