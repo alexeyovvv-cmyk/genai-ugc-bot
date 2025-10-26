@@ -3,6 +3,12 @@
 .env.local
 .secret
 
+# Google Cloud credentials
+vertex-ai-key.json
+*-key.json
+google-credentials.json
+service-account*.json
+
 # Database
 genai.db
 genai.db-journal

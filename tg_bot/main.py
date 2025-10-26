@@ -87,15 +87,26 @@ async def main():
         try:
             # Ensure old webhook (if any) is removed first to avoid conflicts
             await bot.delete_webhook(drop_pending_updates=True)
-            logger.info("Deleted existing webhook (if any)")
+            logger.info("✅ Deleted existing webhook (if any)")
+            
+            # Wait a bit to ensure webhook is fully deleted
+            import asyncio
+            await asyncio.sleep(1)
+            
         except Exception as e:
-            logger.warning(f"Failed to delete existing webhook (continuing): {e}")
+            logger.warning(f"⚠️ Failed to delete existing webhook (continuing): {e}")
 
         try:
             await bot.set_webhook(webhook_url, drop_pending_updates=True)
-            logger.info("Webhook set successfully!")
+            logger.info("✅ Webhook set successfully!")
+            
+            # Verify webhook was set correctly
+            webhook_info = await bot.get_webhook_info()
+            logger.info(f"✅ Webhook info: {webhook_info.url}")
+            
         except Exception as e:
-            logger.error(f"Failed to set webhook: {e}")
+            logger.error(f"❌ Failed to set webhook: {e}")
+            raise
         
         # Create aiohttp app
         app = web.Application()

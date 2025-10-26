@@ -280,3 +280,40 @@ async def admin_r2_test(m: Message):
     except Exception as e:
         await m.answer(f"❌ Ошибка тестирования R2: {e}")
 
+@dp.message(Command("webhook_reset"))
+async def admin_webhook_reset(m: Message):
+    """Принудительно сбросить webhook"""
+    if not is_admin(m.from_user.id):
+        await m.answer("❌ У вас нет прав администратора")
+        return
+    
+    try:
+        # Delete current webhook
+        await bot_instance.delete_webhook(drop_pending_updates=True)
+        await m.answer("✅ Webhook удален. Ожидайте 2 секунды...")
+        
+        import asyncio
+        await asyncio.sleep(2)
+        
+        # Get webhook URL from environment
+        webhook_url = os.getenv("WEBHOOK_URL")
+        if not webhook_url:
+            await m.answer("❌ WEBHOOK_URL не найден в переменных окружения")
+            return
+        
+        # Set new webhook
+        await bot_instance.set_webhook(webhook_url, drop_pending_updates=True)
+        
+        # Verify webhook
+        webhook_info = await bot_instance.get_webhook_info()
+        
+        await m.answer(
+            f"✅ Webhook успешно сброшен!\n\n"
+            f"🔗 URL: {webhook_info.url}\n"
+            f"📊 Pending updates: {webhook_info.pending_update_count}\n"
+            f"🕐 Last error: {webhook_info.last_error_date or 'Нет'}"
+        )
+        
+    except Exception as e:
+        await m.answer(f"❌ Ошибка при сбросе webhook: {e}")
+
