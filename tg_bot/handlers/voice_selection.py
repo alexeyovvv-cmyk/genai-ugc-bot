@@ -123,7 +123,12 @@ async def voice_page_changed(c: CallbackQuery, state: FSMContext):
 async def voice_picked(c: CallbackQuery, state: FSMContext):
     """Пользователь выбрал конкретный голос"""
     from tg_bot.utils.credits import ensure_user
-    ensure_user(c.from_user.id)
+    ensure_user(
+        c.from_user.id,
+        first_name=c.from_user.first_name,
+        last_name=c.from_user.last_name,
+        username=c.from_user.username
+    )
     idx = int(c.data.split(":", 1)[1])
     gender = get_character_gender(c.from_user.id)
     age = get_character_age(c.from_user.id)

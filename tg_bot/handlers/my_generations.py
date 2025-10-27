@@ -21,7 +21,12 @@ async def show_my_generations(c: CallbackQuery):
     """Показать историю генераций пользователя"""
     try:
         user_id = c.from_user.id
-        ensure_user(user_id)
+        ensure_user(
+            user_id,
+            first_name=c.from_user.first_name,
+            last_name=c.from_user.last_name,
+            username=c.from_user.username
+        )
         
         # Получаем историю генераций
         generations = get_user_generations(user_id, limit=10)

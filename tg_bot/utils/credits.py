@@ -4,16 +4,37 @@ from tg_bot.db import SessionLocal
 from tg_bot.models import User, CreditLog, UserState
 from tg_bot.utils.constants import DEFAULT_CREDITS
 
-def ensure_user(tg_id: int) -> User:
-    """Гарантирует наличие пользователя и стартовые DEFAULT_CREDITS при первом старте."""
+def ensure_user(tg_id: int, first_name: str = None, last_name: str = None, username: str = None) -> User:
+    """Гарантирует наличие пользователя и стартовые DEFAULT_CREDITS при первом старте.
+    
+    Args:
+        tg_id: Telegram user ID
+        first_name: User's first name from Telegram
+        last_name: User's last name from Telegram
+        username: User's username from Telegram
+    """
     with SessionLocal() as db:
         u = db.scalar(select(User).where(User.tg_id == tg_id))
         if u: 
+            # Update user info if provided (keep data fresh)
+            if first_name is not None:
+                u.first_name = first_name
+            if last_name is not None:
+                u.last_name = last_name
+            if username is not None:
+                u.username = username
+            db.commit()
             print(f"[CREDITS] User {tg_id} already exists, credits: {u.credits}", flush=True)
             # Убеждаемся, что есть запись в user_state
             ensure_user_state(db, u.id)
             return u
-        u = User(tg_id=tg_id, credits=DEFAULT_CREDITS)
+        u = User(
+            tg_id=tg_id, 
+            credits=DEFAULT_CREDITS,
+            first_name=first_name,
+            last_name=last_name,
+            username=username
+        )
         db.add(u); db.commit(); db.refresh(u)
         db.add(CreditLog(user_id=u.id, delta=+DEFAULT_CREDITS, reason="signup_bonus"))
         # Создаем запись в user_state

@@ -31,7 +31,12 @@ async def cmd_start(m: Message):
     
     from tg_bot.utils.credits import ensure_user
     logger.info(f"🔴 START: Вызываем ensure_user для пользователя {m.from_user.id}")
-    ensure_user(m.from_user.id)
+    ensure_user(
+        m.from_user.id,
+        first_name=m.from_user.first_name,
+        last_name=m.from_user.last_name,
+        username=m.from_user.username
+    )
     logger.info(f"🔴 START: ensure_user завершен для пользователя {m.from_user.id}")
     
     # track_user_activity(m.from_user.id)  # Отслеживаем активность пользователя - ОТКЛЮЧЕНО

@@ -47,6 +47,12 @@ async def setup_startup(bot: Bot):
                 ADD COLUMN IF NOT EXISTS edited_character_path VARCHAR,
                 ADD COLUMN IF NOT EXISTS edit_iteration_count INTEGER DEFAULT 0;
                 
+                -- Add user name fields to users table
+                ALTER TABLE users
+                ADD COLUMN IF NOT EXISTS first_name VARCHAR,
+                ADD COLUMN IF NOT EXISTS last_name VARCHAR,
+                ADD COLUMN IF NOT EXISTS username VARCHAR;
+                
                 -- Create user_activity table if it doesn't exist
                 CREATE TABLE IF NOT EXISTS user_activity (
                     id SERIAL PRIMARY KEY,

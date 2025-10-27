@@ -317,3 +317,134 @@ async def admin_webhook_reset(m: Message):
     except Exception as e:
         await m.answer(f"❌ Ошибка при сбросе webhook: {e}")
 
+@dp.message(Command("detailed_stats"))
+@rate_limited
+async def detailed_stats_command(m: Message):
+    """Показать детальную статистику по всем пользователям"""
+    # Проверяем, что сообщение из ADMIN_FEEDBACK_CHAT_ID
+    if str(m.chat.id) != str(ADMIN_FEEDBACK_CHAT_ID):
+        return
+    
+    # Проверяем, что отправитель в списке админов
+    if not (m.from_user and is_admin(m.from_user.id)):
+        return
+    
+    try:
+        from datetime import datetime, timedelta
+        from sqlalchemy import func, case
+        
+        with SessionLocal() as db:
+            # Вычисляем timestamp 24 часа назад
+            time_24h_ago = datetime.utcnow() - timedelta(hours=24)
+            
+            # Запрос: получаем всех пользователей с подсчетом кредитов
+            query = (
+                select(
+                    User.tg_id,
+                    User.first_name,
+                    User.last_name,
+                    User.username,
+                    User.credits,
+                    # Всего потрачено = сумма отрицательных delta
+                    func.coalesce(
+                        func.sum(case((CreditLog.delta < 0, -CreditLog.delta), else_=0)),
+                        0
+                    ).label('total_spent'),
+                    # Потрачено за 24 часа
+                    func.coalesce(
+                        func.sum(
+                            case(
+                                (
+                                    (CreditLog.delta < 0) & (CreditLog.created_at >= time_24h_ago),
+                                    -CreditLog.delta
+                                ),
+                                else_=0
+                            )
+                        ),
+                        0
+                    ).label('spent_24h')
+                )
+                .outerjoin(CreditLog, User.id == CreditLog.user_id)
+                .group_by(User.id, User.tg_id, User.first_name, User.last_name, User.username, User.credits)
+                .order_by(User.tg_id)
+            )
+            
+            results = db.execute(query).all()
+            
+            if not results:
+                await m.answer("📊 Пользователей не найдено в базе данных.")
+                return
+            
+            # Формируем сообщение
+            message_text = "📊 <b>Детальная статистика пользователей</b>\n\n"
+            
+            for row in results:
+                tg_id = row.tg_id
+                first_name = row.first_name or ""
+                last_name = row.last_name or ""
+                username = row.username
+                total_spent = int(row.total_spent)
+                spent_24h = int(row.spent_24h)
+                
+                # Формируем имя пользователя
+                full_name = f"{first_name} {last_name}".strip()
+                if not full_name:
+                    full_name = "Без имени"
+                
+                username_text = f"@{username}" if username else "нет username"
+                
+                message_text += f"👤 TG ID: <code>{tg_id}</code> | {full_name} ({username_text})\n"
+                message_text += f"   💳 Всего потрачено: {total_spent} кредитов\n"
+                message_text += f"   ⏰ За 24 часа: {spent_24h} кредитов\n\n"
+            
+            message_text += f"📈 <b>Всего пользователей: {len(results)}</b>"
+            
+            # Отправляем сообщение (может быть длинным, поэтому разбиваем если нужно)
+            if len(message_text) > 4096:
+                # Telegram ограничивает сообщения 4096 символами
+                # Разбиваем на части
+                parts = []
+                current_part = "📊 <b>Детальная статистика пользователей</b>\n\n"
+                
+                for row in results:
+                    tg_id = row.tg_id
+                    first_name = row.first_name or ""
+                    last_name = row.last_name or ""
+                    username = row.username
+                    total_spent = int(row.total_spent)
+                    spent_24h = int(row.spent_24h)
+                    
+                    full_name = f"{first_name} {last_name}".strip()
+                    if not full_name:
+                        full_name = "Без имени"
+                    
+                    username_text = f"@{username}" if username else "нет username"
+                    
+                    user_text = (
+                        f"👤 TG ID: <code>{tg_id}</code> | {full_name} ({username_text})\n"
+                        f"   💳 Всего потрачено: {total_spent} кредитов\n"
+                        f"   ⏰ За 24 часа: {spent_24h} кредитов\n\n"
+                    )
+                    
+                    if len(current_part) + len(user_text) > 4000:
+                        parts.append(current_part)
+                        current_part = user_text
+                    else:
+                        current_part += user_text
+                
+                if current_part:
+                    current_part += f"\n📈 <b>Всего пользователей: {len(results)}</b>"
+                    parts.append(current_part)
+                
+                # Отправляем по частям
+                for part in parts:
+                    await m.answer(part, parse_mode="HTML")
+            else:
+                await m.answer(message_text, parse_mode="HTML")
+                
+    except Exception as e:
+        import traceback
+        error_msg = f"❌ Ошибка при получении детальной статистики: {e}\n\n{traceback.format_exc()}"
+        print(error_msg)
+        await m.answer(f"❌ Ошибка при получении детальной статистики: {e}")
+

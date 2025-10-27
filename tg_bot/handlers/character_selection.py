@@ -34,7 +34,12 @@ logger = setup_logger(__name__)
 @dp.callback_query(F.data == "select_character")
 async def select_character(c: CallbackQuery, state: FSMContext):
     """Начать процесс выбора персонажа - сначала выбор пола"""
-    ensure_user(c.from_user.id)
+    ensure_user(
+        c.from_user.id,
+        first_name=c.from_user.first_name,
+        last_name=c.from_user.last_name,
+        username=c.from_user.username
+    )
     await c.message.edit_text(
         "👤 <b>Выбор персонажа</b>\n\n"
         "Сначала выбери пол персонажа:",
@@ -48,7 +53,12 @@ async def select_character(c: CallbackQuery, state: FSMContext):
 @dp.callback_query(F.data == "gender_male")
 async def gender_male_selected(c: CallbackQuery, state: FSMContext):
     """Пользователь выбрал мужской пол"""
-    ensure_user(c.from_user.id)
+    ensure_user(
+        c.from_user.id,
+        first_name=c.from_user.first_name,
+        last_name=c.from_user.last_name,
+        username=c.from_user.username
+    )
     set_character_gender(c.from_user.id, "male")
     set_character_page(c.from_user.id, 0)  # Сбрасываем страницу
     logger.info(f"User {c.from_user.id} выбрал пол: мужской")
@@ -59,7 +69,12 @@ async def gender_male_selected(c: CallbackQuery, state: FSMContext):
 @dp.callback_query(F.data == "gender_female")
 async def gender_female_selected(c: CallbackQuery, state: FSMContext):
     """Пользователь выбрал женский пол"""
-    ensure_user(c.from_user.id)
+    ensure_user(
+        c.from_user.id,
+        first_name=c.from_user.first_name,
+        last_name=c.from_user.last_name,
+        username=c.from_user.username
+    )
     set_character_gender(c.from_user.id, "female")
     set_character_page(c.from_user.id, 0)  # Сбрасываем страницу
     logger.info(f"User {c.from_user.id} выбрал пол: женский")
@@ -159,7 +174,12 @@ async def show_character_gallery(c: CallbackQuery, state: FSMContext):
 @dp.callback_query(F.data.startswith("char_page:"))
 async def character_page_changed(c: CallbackQuery, state: FSMContext):
     """Пользователь переключил страницу персонажей"""
-    ensure_user(c.from_user.id)
+    ensure_user(
+        c.from_user.id,
+        first_name=c.from_user.first_name,
+        last_name=c.from_user.last_name,
+        username=c.from_user.username
+    )
     page = int(c.data.split(":", 1)[1])
     set_character_page(c.from_user.id, page)
     logger.info(f"User {c.from_user.id} переключил на страницу {page}")
@@ -170,7 +190,12 @@ async def character_page_changed(c: CallbackQuery, state: FSMContext):
 @dp.callback_query(F.data.startswith("char_pick:"))
 async def character_picked(c: CallbackQuery, state: FSMContext):
     """Пользователь выбрал конкретного персонажа"""
-    ensure_user(c.from_user.id)
+    ensure_user(
+        c.from_user.id,
+        first_name=c.from_user.first_name,
+        last_name=c.from_user.last_name,
+        username=c.from_user.username
+    )
     idx = int(c.data.split(":", 1)[1])
     gender = get_character_gender(c.from_user.id)
     

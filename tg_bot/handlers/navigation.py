@@ -70,7 +70,12 @@ async def start_ugc_creation(c: CallbackQuery):
     """Start UGC creation process"""
     from tg_bot.utils.credits import ensure_user
     # Гарантируем, что пользователь и его состояние существуют
-    ensure_user(c.from_user.id)
+    ensure_user(
+        c.from_user.id,
+        first_name=c.from_user.first_name,
+        last_name=c.from_user.last_name,
+        username=c.from_user.username
+    )
     await c.message.edit_text(
         "🎬 <b>Создание UGC-like рекламы</b>\n\n"
         "Давай выберем походящего персонажа для вашей рекламы:",

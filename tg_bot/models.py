@@ -12,6 +12,9 @@ class User(Base):
     tg_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True)
     credits: Mapped[int] = mapped_column(Integer, default=3)
     selected_voice_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    first_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    last_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    username: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     created_at: Mapped[str] = mapped_column(DateTime, server_default=func.now())
 
 class Asset(Base):
