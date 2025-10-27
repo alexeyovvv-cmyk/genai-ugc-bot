@@ -21,8 +21,9 @@ from tg_bot.utils.user_state import (
 )
 from tg_bot.utils.files import list_character_images, get_character_image
 from tg_bot.keyboards import (
-    gender_selection_menu, age_selection_menu,
-    character_gallery_menu, character_edit_offer_menu
+    gender_selection_menu,
+    character_gallery_menu, character_edit_offer_menu,
+    back_to_main_menu
 )
 from tg_bot.utils.logger import setup_logger
 from tg_bot.dispatcher import dp
@@ -49,16 +50,10 @@ async def gender_male_selected(c: CallbackQuery, state: FSMContext):
     """Пользователь выбрал мужской пол"""
     ensure_user(c.from_user.id)
     set_character_gender(c.from_user.id, "male")
+    set_character_page(c.from_user.id, 0)  # Сбрасываем страницу
     logger.info(f"User {c.from_user.id} выбрал пол: мужской")
     
-    await c.message.edit_text(
-        "👨 <b>Мужской пол выбран</b>\n\n"
-        "Теперь выбери возраст персонажа:",
-        parse_mode="HTML",
-        reply_markup=age_selection_menu()
-    )
-    await state.set_state(UGCCreation.waiting_age_selection)
-    await c.answer()
+    await show_character_gallery(c, state)
 
 
 @dp.callback_query(F.data == "gender_female")
@@ -66,36 +61,8 @@ async def gender_female_selected(c: CallbackQuery, state: FSMContext):
     """Пользователь выбрал женский пол"""
     ensure_user(c.from_user.id)
     set_character_gender(c.from_user.id, "female")
+    set_character_page(c.from_user.id, 0)  # Сбрасываем страницу
     logger.info(f"User {c.from_user.id} выбрал пол: женский")
-    
-    await c.message.edit_text(
-        "👩 <b>Женский пол выбран</b>\n\n"
-        "Теперь выбери возраст персонажа:",
-        parse_mode="HTML",
-        reply_markup=age_selection_menu()
-    )
-    await state.set_state(UGCCreation.waiting_age_selection)
-    await c.answer()
-
-
-@dp.callback_query(F.data == "age_young")
-async def age_young_selected(c: CallbackQuery, state: FSMContext):
-    """Пользователь выбрал молодой возраст"""
-    ensure_user(c.from_user.id)
-    set_character_age(c.from_user.id, "young")
-    set_character_page(c.from_user.id, 0)  # Сбрасываем страницу
-    logger.info(f"User {c.from_user.id} выбрал возраст: молодой")
-    
-    await show_character_gallery(c, state)
-
-
-@dp.callback_query(F.data == "age_elderly")
-async def age_elderly_selected(c: CallbackQuery, state: FSMContext):
-    """Пользователь выбрал пожилой возраст"""
-    ensure_user(c.from_user.id)
-    set_character_age(c.from_user.id, "elderly")
-    set_character_page(c.from_user.id, 0)  # Сбрасываем страницу
-    logger.info(f"User {c.from_user.id} выбрал возраст: пожилой")
     
     await show_character_gallery(c, state)
 
@@ -103,23 +70,22 @@ async def age_elderly_selected(c: CallbackQuery, state: FSMContext):
 async def show_character_gallery(c: CallbackQuery, state: FSMContext):
     """Показать галерею персонажей"""
     gender = get_character_gender(c.from_user.id)
-    age = get_character_age(c.from_user.id)
     page = get_character_page(c.from_user.id)
     
-    if not gender or not age:
+    if not gender:
         await c.message.answer(
-            "❌ Ошибка: не выбраны параметры персонажа. Начните сначала.",
+            "❌ Ошибка: не выбран пол персонажа. Начните сначала.",
             reply_markup=back_to_main_menu()
         )
         return await c.answer()
     
-    # Получаем изображения для текущей страницы
-    images, has_next = list_character_images(gender, age, page, limit=5)
+    # Получаем изображения для текущей страницы (все возрасты вместе)
+    images, has_next = list_character_images(gender, page, limit=5)
     
     if not images:
         await c.message.edit_text(
             f"❌ <b>Нет доступных персонажей</b>\n\n"
-            f"Для выбранных параметров (пол: {gender}, возраст: {age}) "
+            f"Для выбранного пола ({gender}) "
             f"персонажи не найдены.\n\n"
             f"Попробуйте изменить параметры:",
             parse_mode="HTML",
@@ -129,7 +95,7 @@ async def show_character_gallery(c: CallbackQuery, state: FSMContext):
     
     # Отправляем изображения персонажей одним альбомом (до 5 в одной группе)
     media = []
-    for idx, image_path in enumerate(images):
+    for idx, (image_path, age) in enumerate(images):
         global_index = page * 5 + idx
         caption = None
         
@@ -176,9 +142,11 @@ async def show_character_gallery(c: CallbackQuery, state: FSMContext):
                 except:
                     pass
     
+    gender_text = "👨 Мужчины" if gender == "male" else "👩 Женщины"
+    
     # Отправляем меню с навигацией
     await c.message.answer(
-        f"👤 <b>Персонажи ({gender}, {age})</b>\n\n"
+        f"👤 <b>Персонажи: {gender_text}</b>\n\n"
         f"Страница {page + 1}. Выбери персонажа:",
         parse_mode="HTML",
         reply_markup=character_gallery_menu(page, has_next, len(images))
@@ -205,14 +173,18 @@ async def character_picked(c: CallbackQuery, state: FSMContext):
     ensure_user(c.from_user.id)
     idx = int(c.data.split(":", 1)[1])
     gender = get_character_gender(c.from_user.id)
-    age = get_character_age(c.from_user.id)
     
-    # Получаем изображение персонажа
-    character_image = get_character_image(gender, age, idx)
+    # Получаем изображение персонажа (теперь возвращает кортеж с возрастом)
+    character_data = get_character_image(gender, idx)
     
-    if not character_image:
+    if not character_data:
         await c.message.answer("❌ Персонаж не найден. Попробуйте выбрать другого.")
         return await c.answer()
+    
+    character_image, age = character_data
+    
+    # Автоматически сохраняем возраст персонажа
+    set_character_age(c.from_user.id, age)
     
     # Сохраняем выбор персонажа (используем глобальный индекс)
     set_selected_character(c.from_user.id, idx)
@@ -274,18 +246,3 @@ async def back_to_gender(c: CallbackQuery, state: FSMContext):
     await c.answer()
 
 
-@dp.callback_query(F.data == "back_to_age")
-async def back_to_age(c: CallbackQuery, state: FSMContext):
-    """Возврат к выбору возраста"""
-    gender = get_character_gender(c.from_user.id)
-    gender_text = "👨 Мужской" if gender == "male" else "👩 Женский"
-    
-    await c.message.edit_text(
-        f"👤 <b>Выбор персонажа</b>\n\n"
-        f"Пол: {gender_text}\n"
-        f"Выбери возраст персонажа:",
-        parse_mode="HTML",
-        reply_markup=age_selection_menu()
-    )
-    await state.set_state(UGCCreation.waiting_age_selection)
-    await c.answer()

@@ -272,36 +272,36 @@ else:
 
 ### File Management API
 
-#### `list_character_images(gender: str, age: str, page: int = 0, limit: int = 5) -> Tuple[List[str], bool]`
-Получает список изображений персонажей.
+#### `list_character_images(gender: str, page: int = 0, limit: int = 5) -> Tuple[List[Tuple[str, str]], bool]`
+Получает список изображений персонажей (объединяет все возрасты).
 
 **Параметры:**
 - `gender` (str): Пол персонажа
-- `age` (str): Возраст персонажа
 - `page` (int): Номер страницы
 - `limit` (int): Количество на странице
 
 **Возвращает:**
-- `Tuple[List[str], bool]`: Список путей к изображениям и флаг наличия следующей страницы
+- `Tuple[List[Tuple[str, str]], bool]`: Список кортежей (путь_к_изображению, возраст) и флаг наличия следующей страницы
 
 **Пример:**
 ```python
 from tg_bot.utils.files import list_character_images
 
-images, has_next = list_character_images("male", "young", page=0, limit=5)
-print(f"Found {len(images)} images, has next: {has_next}")
+images, has_next = list_character_images("male", page=0, limit=5)
+for image_path, age in images:
+    print(f"Image: {image_path}, Age: {age}")
+print(f"Has next: {has_next}")
 ```
 
-#### `get_character_image(gender: str, age: str, index: int) -> Optional[str]`
-Получает конкретное изображение персонажа.
+#### `get_character_image(gender: str, index: int) -> Optional[Tuple[str, str]]`
+Получает конкретное изображение персонажа (автоматически определяет возраст).
 
 **Параметры:**
 - `gender` (str): Пол персонажа
-- `age` (str): Возраст персонажа
-- `index` (int): Индекс изображения
+- `index` (int): Индекс изображения (глобальный для всех возрастов)
 
 **Возвращает:**
-- `Optional[str]`: Путь к изображению или None
+- `Optional[Tuple[str, str]]`: Кортеж (путь_к_изображению, возраст) или None
 
 #### `list_voice_samples(gender: str, age: str, page: int = 0, limit: int = 5) -> Tuple[List[Tuple[str, str, str]], bool]`
 Получает список голосовых сэмплов.

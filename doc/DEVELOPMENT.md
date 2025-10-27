@@ -171,6 +171,20 @@ def get_user_data(user_id: int):
             select(NewModel).where(NewModel.user_id == user_id)
         )
         return data
+
+# Пример работы с персонажами (новая сигнатура)
+from tg_bot.utils.files import list_character_images, get_character_image
+
+# Получить всех персонажей для пола
+images, has_next = list_character_images("male", page=0, limit=5)
+for image_path, age in images:
+    print(f"Character: {image_path}, Age: {age}")
+
+# Получить конкретного персонажа
+character_data = get_character_image("male", 0)
+if character_data:
+    image_path, age = character_data
+    print(f"Selected: {image_path}, Age: {age}")
 ```
 
 ## 🎨 Создание клавиатур

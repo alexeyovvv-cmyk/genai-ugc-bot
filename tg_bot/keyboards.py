@@ -55,15 +55,6 @@ def gender_selection_menu():
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_ugc")]
     ])
 
-def age_selection_menu():
-    """Меню выбора возраста персонажа"""
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="🧒 Молодой", callback_data="age_young"),
-            InlineKeyboardButton(text="👴 Пожилой (50+)", callback_data="age_elderly")
-        ],
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_gender")]
-    ])
 
 def character_gallery_menu(page: int, has_next: bool, total_count: int):
     """Меню галереи персонажей с выбором и пагинацией.
@@ -91,8 +82,8 @@ def character_gallery_menu(page: int, has_next: bool, total_count: int):
         buttons.append(nav_buttons)
 
     # Кнопка изменения параметров и назад
-    buttons.append([InlineKeyboardButton(text="🔄 Изменить параметры персонажа", callback_data="change_character_params")])
-    buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_age")])
+    buttons.append([InlineKeyboardButton(text="🔄 Изменить пол персонажа", callback_data="change_character_params")])
+    buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_gender")])
 
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 

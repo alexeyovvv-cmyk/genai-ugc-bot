@@ -79,9 +79,11 @@ async def select_character(c: CallbackQuery, state: FSMContext)
 
 @dp.callback_query(F.data == "gender_male")
 async def gender_male_selected(c: CallbackQuery, state: FSMContext)
+# Сразу показывает галерею без выбора возраста
 
 @dp.callback_query(F.data.startswith("char_pick:"))
 async def character_picked(c: CallbackQuery, state: FSMContext)
+# Автоматически определяет возраст из выбранного персонажа
 ```
 
 #### **character_editing.py** - Редактирование персонажа
@@ -150,7 +152,7 @@ falai_logger = setup_logger("falai")
 # Character selection
 set_character_gender(tg_id: int, gender: str)
 get_character_gender(tg_id: int) -> Optional[str]
-set_character_age(tg_id: int, age: str)
+set_character_age(tg_id: int, age: str)  # Устанавливается автоматически при выборе
 get_character_age(tg_id: int) -> Optional[str]
 
 # Pagination
@@ -182,7 +184,7 @@ spend_credits(tg_id: int, amount: int, reason: str) -> bool
 
 ### 2. **Создание UGC рекламы**
 ```
-Создать UGC → Выбор пола → Выбор возраста → Галерея персонажей
+Создать UGC → Выбор пола → Галерея персонажей (все возрасты вместе)
 ```
 
 ### 3. **Редактирование персонажа** (опционально)

@@ -13,46 +13,39 @@ CHARACTERS_DIR = BASE_DIR / "data" / "characters"
 _url_cache = {}
 _cache_expiry = {}
 
-def list_character_images(gender: str, age: str, page: int = 0, limit: int = 5) -> Tuple[List[str], bool]:
+def list_character_images(gender: str, page: int = 0, limit: int = 5) -> Tuple[List[Tuple[str, str]], bool]:
     """
-    Получить список изображений персонажей с пагинацией
+    Получить список изображений персонажей с пагинацией (объединяет все возрасты)
     
     Args:
         gender: 'male' или 'female'
-        age: 'young', 'elderly'
         page: номер страницы (начиная с 0)
         limit: количество изображений на странице
     
     Returns:
-        Tuple[List[str], bool]: (список путей к изображениям, есть_ли_следующая_страница)
+        Tuple[List[Tuple[str, str]], bool]: (список (путь_к_изображению, возраст), есть_ли_следующая_страница)
     """
     try:
-        # Сначала пробуем получить из R2
-        r2_prefix = f"presets/characters/{gender}/{age}/"
-        r2_files = list_files(r2_prefix)
+        all_images = []
         
-        if r2_files:
-            # Фильтруем только изображения
-            image_files = [f for f in r2_files if f['key'].lower().endswith(('.png', '.jpg', '.jpeg'))]
+        # Объединяем изображения из всех возрастных категорий
+        for age in ['young', 'elderly']:
+            # Сначала пробуем получить из R2
+            r2_prefix = f"presets/characters/{gender}/{age}/"
+            r2_files = list_files(r2_prefix)
             
-            # Применяем пагинацию
-            start_idx = page * limit
-            end_idx = start_idx + limit
-            
-            page_images = image_files[start_idx:end_idx]
-            has_next = end_idx < len(image_files)
-            
-            # Возвращаем R2 ключи вместо локальных путей
-            return [f['key'] for f in page_images], has_next
-        
-        # Fallback к локальным файлам
-        target_dir = CHARACTERS_DIR / gender / age
-        
-        if not target_dir.exists():
-            return [], False
-        
-        # Получаем все изображения
-        all_images = sorted(glob.glob(str(target_dir / "*.*")))
+            if r2_files:
+                # Фильтруем только изображения
+                image_files = [f for f in r2_files if f['key'].lower().endswith(('.png', '.jpg', '.jpeg'))]
+                # Добавляем с меткой возраста
+                all_images.extend([(f['key'], age) for f in image_files])
+            else:
+                # Fallback к локальным файлам
+                target_dir = CHARACTERS_DIR / gender / age
+                
+                if target_dir.exists():
+                    local_images = sorted(glob.glob(str(target_dir / "*.*")))
+                    all_images.extend([(img, age) for img in local_images])
         
         # Применяем пагинацию
         start_idx = page * limit
@@ -67,22 +60,21 @@ def list_character_images(gender: str, age: str, page: int = 0, limit: int = 5) 
         print(f"Error listing character images: {e}")
         return [], False
 
-def get_character_image(gender: str, age: str, index: int) -> Optional[str]:
+def get_character_image(gender: str, index: int) -> Optional[Tuple[str, str]]:
     """
     Получить конкретное изображение персонажа по индексу
     
     Args:
         gender: 'male' или 'female'
-        age: 'young', 'elderly'
-        index: индекс изображения
+        index: индекс изображения (глобальный для всех возрастов)
     
     Returns:
-        str: путь к изображению или None
+        Optional[Tuple[str, str]]: (путь к изображению, возраст) или None
     """
     try:
-        images, _ = list_character_images(gender, age, page=0, limit=1000)  # Получаем все
+        images, _ = list_character_images(gender, page=0, limit=1000)  # Получаем все
         if 0 <= index < len(images):
-            image_key = images[index]
+            image_key, age = images[index]
             
             # Если это R2 ключ, скачиваем файл во временную папку
             if image_key.startswith('presets/'):
@@ -96,13 +88,13 @@ def get_character_image(gender: str, age: str, index: int) -> Optional[str]:
                 
                 # Скачиваем файл из R2
                 if download_file(image_key, temp_path):
-                    return temp_path
+                    return (temp_path, age)
                 else:
                     print(f"Failed to download R2 file: {image_key}")
                     return None
             else:
                 # Это локальный путь
-                return image_key
+                return (image_key, age)
         return None
     except Exception as e:
         print(f"Error getting character image: {e}")

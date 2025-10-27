@@ -60,9 +60,9 @@ FSM State → UserState DB → Handler Logic → Next State
 ```python
 # Ответственность: Выбор и навигация по персонажам
 - Выбор пола персонажа
-- Выбор возраста персонажа
-- Пагинация галереи
+- Пагинация галереи (все возрасты вместе)
 - Выбор конкретного персонажа
+- Автоматическое определение возраста
 - Навигация между этапами
 ```
 
@@ -199,7 +199,8 @@ FSM State → UserState DB → Handler Logic → Next State
 #### **user_state.py** - Состояние
 ```python
 # Управление состоянием пользователя
-- Character selection (gender, age, page)
+- Character selection (gender, page)
+- Age determination (автоматически при выборе персонажа)
 - Voice selection (page, voice_id)
 - Character editing (paths, iterations)
 - Text input (character_text)
@@ -237,10 +238,11 @@ FSM State → UserState DB → Handler Logic → Next State
 #### **files.py** - Файлы
 ```python
 # Работа с файлами персонажей
-- list_character_images() - список изображений
-- get_character_image() - получение изображения
+- list_character_images(gender, page, limit) - объединяет все возрасты
+- get_character_image(gender, index) - возвращает (path, age)
 - get_character_image_url() - URL для R2
 - Кэширование presigned URLs
+- Автоматическое определение возраста из папки
 ```
 
 #### **voices.py** - Голоса

@@ -154,7 +154,8 @@ async def character_text_received(m: Message, state: FSMContext):
                     logger.info(f"[UGC] Используем отредактированную версию из R2: {edited_character_path}")
                 else:
                     logger.info(f"[UGC] Не удалось скачать из R2, используем оригинал")
-                    selected_frame = get_character_image(gender, age, character_idx)
+                    character_data = get_character_image(gender, character_idx)
+                    selected_frame = character_data[0] if character_data else None
             else:
                 # Legacy local path support
                 if os.path.exists(edited_character_path):
@@ -162,16 +163,21 @@ async def character_text_received(m: Message, state: FSMContext):
                     logger.info(f"[UGC] Используем локальную отредактированную версию: {edited_character_path}")
                 else:
                     logger.info(f"[UGC] Файл не найден, используем оригинал")
-                    selected_frame = get_character_image(gender, age, character_idx)
+                    character_data = get_character_image(gender, character_idx)
+                    selected_frame = character_data[0] if character_data else None
         else:
             # No edited version
-            selected_frame = get_character_image(gender, age, character_idx)
-            logger.info(f"[UGC] Используем оригинальную систему персонажей: {gender}/{age}, индекс {character_idx}")
+            character_data = get_character_image(gender, character_idx)
+            if character_data:
+                selected_frame, detected_age = character_data
+                logger.info(f"[UGC] Используем оригинальную систему персонажей: {gender}/{detected_age}, индекс {character_idx}")
+            else:
+                selected_frame = None
         
         if not selected_frame:
             logger.info(f"[UGC] ❌ Кадр не найден!")
-            if gender and age:
-                raise Exception(f"Не удалось найти персонажа с параметрами: пол={gender}, возраст={age}, индекс={character_idx}")
+            if gender:
+                raise Exception(f"Не удалось найти персонажа с параметрами: пол={gender}, индекс={character_idx}")
             else:
                 raise Exception("Не удалось найти выбранный кадр")
         
