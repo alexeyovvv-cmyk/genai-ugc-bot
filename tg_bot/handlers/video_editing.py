@@ -92,8 +92,11 @@ async def start_video_editing(c: CallbackQuery, state: FSMContext):
         
         logger.info(f"Starting video editing for user {c.from_user.id}, format={video_format}")
         
-        # Отправляем статусное сообщение
-        status_msg = await c.message.answer("⏳ Начинаю монтаж видео...")
+        # Отправляем статусное сообщение с предупреждением о времени
+        status_msg = await c.message.answer(
+            "⏳ Начинаю монтаж видео...\n\n"
+            "⚠️ Это займет примерно 5 минут"
+        )
         
         try:
             if video_format == "talking_head":
@@ -218,21 +221,8 @@ async def finish_generation(c: CallbackQuery, state: FSMContext):
     
     logger.info(f"User {c.from_user.id} finished generation")
     
-    # Проверяем, был ли монтаж
+    # Проверяем, был ли монтаж (до очистки!)
     edited_video = get_last_generated_video(c.from_user.id)
-    
-    if edited_video and edited_video.get('r2_key'):
-        # Был монтаж - показываем финальный результат
-        await c.message.edit_text(
-            "✅ Отлично! Видео с монтажом готово.\n\n"
-            "🎬 Хочешь создать еще одну UGC рекламу?"
-        )
-    else:
-        # Монтажа не было - просто завершаем
-        await c.message.edit_text(
-            "✅ Отлично! Видео готово.\n\n"
-            "🎬 Хочешь создать еще одну UGC рекламу?"
-        )
     
     # Очищаем все данные о видео
     clear_all_video_data(c.from_user.id)
@@ -240,8 +230,18 @@ async def finish_generation(c: CallbackQuery, state: FSMContext):
     # Очищаем состояние
     await state.clear()
     
-    # Возвращаемся в главное меню
-    await c.message.answer(
-        "Выбери действие:",
-        reply_markup=main_menu()
-    )
+    # Возвращаемся в главное меню одним сообщением
+    if edited_video and edited_video.get('r2_key'):
+        # Был монтаж
+        await c.message.edit_text(
+            "✅ Отлично! Видео с монтажом готово.\n\n"
+            "🎬 Хочешь создать еще одну UGC рекламу?",
+            reply_markup=main_menu()
+        )
+    else:
+        # Монтажа не было
+        await c.message.edit_text(
+            "✅ Отлично! Видео готово.\n\n"
+            "🎬 Хочешь создать еще одну UGC рекламу?",
+            reply_markup=main_menu()
+        )

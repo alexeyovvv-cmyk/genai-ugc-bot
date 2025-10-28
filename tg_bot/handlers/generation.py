@@ -313,7 +313,8 @@ async def character_text_received(m: Message, state: FSMContext):
                 "✨ Хочешь смонтировать видео?\n\n"
                 "🎬 <b>Монтаж</b> - добавить субтитры и эффекты\n"
                 "✅ <b>Завершить</b> - оставить как есть",
-                reply_markup=video_editing_menu()
+                reply_markup=video_editing_menu(),
+                parse_mode="HTML"
             )
             logger.info(f"[UGC] Предложен выбор: монтаж или завершить")
         else:
