@@ -61,6 +61,11 @@ class UserState(Base):
     # Video format fields
     video_format: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # формат видео ('talking_head', 'character_with_background')
     background_video_path: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # путь к фоновому видео на R2
+    # Last generated video fields (for editing)
+    original_video_r2_key: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # R2 ключ исходного видео (для повторных монтажей)
+    original_video_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # URL исходного видео
+    last_generated_video_r2_key: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # R2 ключ последнего сгенерированного видео
+    last_generated_video_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # URL последнего видео для быстрого доступа
     created_at: Mapped[str] = mapped_column(DateTime, server_default=func.now())
     # updated_at можно добавить позже триггером, пока не требуется
 

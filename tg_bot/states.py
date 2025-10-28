@@ -30,6 +30,8 @@ class UGCCreation(StatesGroup):
     waiting_edit_decision = State()  # ждем решение пользователя: редактировать персонажа или нет
     waiting_edit_prompt = State()  # ждем описание изменений для редактирования
     waiting_edit_result_decision = State()  # ждем решение после показа отредактированного результата
+    # Video editing states
+    waiting_editing_decision = State()  # ждем выбор: монтаж или завершить
 
 class Feedback(StatesGroup):
     """Состояния для обратной связи"""

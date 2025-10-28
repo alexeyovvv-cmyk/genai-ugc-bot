@@ -23,7 +23,8 @@ from tg_bot.utils.user_state import (
     get_last_audio, set_last_audio,
     get_character_gender, get_character_age,
     get_original_character_path, get_edited_character_path,
-    clear_edit_session
+    clear_edit_session,
+    set_original_video
 )
 from tg_bot.utils.voice_mapping import get_voice_for_character, get_default_language, get_default_emotion
 from tg_bot.utils.files import get_character_image
@@ -32,7 +33,7 @@ from tg_bot.services.minimax_service import tts_to_file
 from tg_bot.services.falai_service import generate_talking_head_video
 from tg_bot.services.r2_service import download_file, delete_file
 from tg_bot.keyboards import (
-    back_to_main_menu, main_menu
+    back_to_main_menu, main_menu, video_editing_menu
 )
 from tg_bot.utils.logger import setup_logger
 from tg_bot.dispatcher import dp
@@ -266,6 +267,10 @@ async def character_text_received(m: Message, state: FSMContext):
                 import traceback
                 traceback.print_exc()
             
+            # Сохраняем информацию об исходном видео для возможности монтажа
+            set_original_video(m.from_user.id, r2_video_key, video_url)
+            logger.info(f"[UGC] ✅ Сохранена информация об исходном видео для монтажа")
+            
             # Удаляем видео файл после отправки
             try:
                 if os.path.exists(video_path):
@@ -301,20 +306,20 @@ async def character_text_received(m: Message, state: FSMContext):
                 logger.info(f"[UGC] ✅ Сессия редактирования очищена")
             except Exception as cleanup_error:
                 logger.info(f"[UGC] ⚠️ Не удалось очистить временные файлы редактирования: {cleanup_error}")
+            
+            # Предлагаем монтаж или завершение
+            await state.set_state(UGCCreation.waiting_editing_decision)
+            await m.answer(
+                "✨ Хочешь смонтировать видео?\n\n"
+                "🎬 <b>Монтаж</b> - добавить субтитры и эффекты\n"
+                "✅ <b>Завершить</b> - оставить как есть",
+                reply_markup=video_editing_menu()
+            )
+            logger.info(f"[UGC] Предложен выбор: монтаж или завершить")
         else:
             # Авто-рефанд если видео не получено
             add_credits(m.from_user.id, COST_UGC_VIDEO, "refund_ugc_fail")
             raise Exception("Видео не было сгенерировано")
-        
-        # Очищаем состояние
-        await state.clear()
-        logger.info(f"[UGC] Состояние очищено")
-        
-        # Предлагаем создать еще одно видео
-        await m.answer(
-            "🎬 Хочешь создать еще одну UGC рекламу?",
-            reply_markup=main_menu()
-        )
         
     except Exception as e:
         logger.info(f"[UGC] ❌ Критическая ошибка при создании UGC рекламы: {e}")

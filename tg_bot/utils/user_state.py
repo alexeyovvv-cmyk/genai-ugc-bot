@@ -298,3 +298,72 @@ def get_background_video_path(tg_id: int) -> Optional[str]:
         state = db.scalar(select(UserState).where(UserState.user_id == user.id))
         return state.background_video_path if state else None
 
+
+# Last generated video state helpers (for video editing)
+def set_original_video(tg_id: int, r2_key: Optional[str], url: Optional[str] = None) -> None:
+    """Set original video R2 key and URL for user (for re-editing)"""
+    with SessionLocal() as db:
+        user = db.scalar(select(User).where(User.tg_id == tg_id))
+        if not user:
+            return
+        state = _get_or_create_state(db, user.id)
+        state.original_video_r2_key = r2_key
+        state.original_video_url = url
+        db.commit()
+
+
+def get_original_video(tg_id: int) -> Optional[dict]:
+    """Get original video data for user"""
+    with SessionLocal() as db:
+        user = db.scalar(select(User).where(User.tg_id == tg_id))
+        if not user:
+            return None
+        state = db.scalar(select(UserState).where(UserState.user_id == user.id))
+        if not state:
+            return None
+        return {
+            'r2_key': state.original_video_r2_key,
+            'url': state.original_video_url
+        }
+
+
+def set_last_generated_video(tg_id: int, r2_key: Optional[str], url: Optional[str] = None) -> None:
+    """Set last generated video R2 key and URL for user"""
+    with SessionLocal() as db:
+        user = db.scalar(select(User).where(User.tg_id == tg_id))
+        if not user:
+            return
+        state = _get_or_create_state(db, user.id)
+        state.last_generated_video_r2_key = r2_key
+        state.last_generated_video_url = url
+        db.commit()
+
+
+def get_last_generated_video(tg_id: int) -> Optional[dict]:
+    """Get last generated video data for user"""
+    with SessionLocal() as db:
+        user = db.scalar(select(User).where(User.tg_id == tg_id))
+        if not user:
+            return None
+        state = db.scalar(select(UserState).where(UserState.user_id == user.id))
+        if not state:
+            return None
+        return {
+            'r2_key': state.last_generated_video_r2_key,
+            'url': state.last_generated_video_url
+        }
+
+
+def clear_all_video_data(tg_id: int) -> None:
+    """Clear all video data for user (original and last generated)"""
+    with SessionLocal() as db:
+        user = db.scalar(select(User).where(User.tg_id == tg_id))
+        if not user:
+            return
+        state = _get_or_create_state(db, user.id)
+        state.original_video_r2_key = None
+        state.original_video_url = None
+        state.last_generated_video_r2_key = None
+        state.last_generated_video_url = None
+        db.commit()
+

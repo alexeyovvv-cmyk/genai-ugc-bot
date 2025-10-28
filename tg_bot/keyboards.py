@@ -258,3 +258,10 @@ def format_selection_menu():
         [InlineKeyboardButton(text="🎬 Персонаж с бекграундом", callback_data="format_character_background")],
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")]
     ])
+
+def video_editing_menu():
+    """Меню выбора: монтаж или завершить"""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🎬 Монтаж", callback_data="start_video_editing")],
+        [InlineKeyboardButton(text="✅ Завершить", callback_data="finish_generation")],
+    ])

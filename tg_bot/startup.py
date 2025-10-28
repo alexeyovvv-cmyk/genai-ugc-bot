@@ -47,7 +47,11 @@ async def setup_startup(bot: Bot):
                 ADD COLUMN IF NOT EXISTS edited_character_path VARCHAR,
                 ADD COLUMN IF NOT EXISTS edit_iteration_count INTEGER DEFAULT 0,
                 ADD COLUMN IF NOT EXISTS video_format VARCHAR,
-                ADD COLUMN IF NOT EXISTS background_video_path VARCHAR;
+                ADD COLUMN IF NOT EXISTS background_video_path VARCHAR,
+                ADD COLUMN IF NOT EXISTS original_video_r2_key VARCHAR,
+                ADD COLUMN IF NOT EXISTS original_video_url VARCHAR,
+                ADD COLUMN IF NOT EXISTS last_generated_video_r2_key VARCHAR,
+                ADD COLUMN IF NOT EXISTS last_generated_video_url VARCHAR;
                 
                 -- Add user name fields to users table
                 ALTER TABLE users

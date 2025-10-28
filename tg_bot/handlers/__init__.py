@@ -21,6 +21,7 @@ def register_all_handlers(dp: Dispatcher):
         character_editing,
         # voice_selection,  # DEPRECATED: voice selection removed, using automatic voice mapping
         generation,
+        video_editing,
         my_generations,
         feedback,
         credits,
