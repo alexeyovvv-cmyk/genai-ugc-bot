@@ -1,9 +1,12 @@
-# Nixpacks конфигурация отключена в пользу Dockerfile
-# [phases.setup]
-# nixPkgs = ["python311", "gcc", "python311Packages.pip"]
-
-# [phases.install]
-# cmds = ["python -m pip install -r tg_bot/requirements.txt"]
-
-# [start]
-# cmd = "python -m tg_bot.main"
+[phases.setup]
+aptPkgs = [
+    "libgl1-mesa-glx",
+    "libglib2.0-0",
+    "libsm6",
+    "libxext6",
+    "libxrender1",
+    "libgomp1",
+    "libgthread-2.0-0",
+    "libopencv-dev",
+    "python3-opencv"
+]
