@@ -1,0 +1,79 @@
+{
+  "title": "Talking Head Mix Basic Overlay",
+  "clips": [
+    {
+      "type": "video",
+      "src": "https://drive.usercontent.google.com/uc?id=1gjRwhYpzpzgho859tvry1aoXyww_AJpB&export=download",
+      "start": 0,
+      "trim": 0,
+      "length": 3.0,
+      "fit": "contain"
+    },
+    {
+      "type": "video",
+      "src": "https://drive.usercontent.google.com/uc?id=1gjRwhYpzpzgho859tvry1aoXyww_AJpB&export=download",
+      "start": 3.0,
+      "trim": 3.0,
+      "fit": "contain",
+      "auto_length": true,
+      "scale": 0.001,
+      "offset": {
+        "x": 1.5,
+        "y": 0
+      }
+    }
+  ],
+  "overlays": [
+    {
+      "type": "video",
+      "src": "https://shotstack-ingest-api-stage-sources.s3.ap-southeast-2.amazonaws.com/e60vvndco9/zzz01k8j-cz8t7-kfkvq-3ym77-nhgjzt/source.mov",
+      "start": 3.0,
+      "trim": 3.0,
+      "fit": "contain",
+      "scale": 0.55,
+      "position": "bottomLeft",
+      "offset": {
+        "x": -0.01,
+        "y": 0
+      },
+      "transition": "fade",
+      "volume": 0,
+      "auto_length": true,
+      "label": "talking_head"
+    },
+    {
+      "type": "video",
+      "src": "https://drive.google.com/uc?id=1VxrZf2g6Ro5xxkn0H0zXcXSkV4JqJhWr&export=download",
+      "start": 3.0,
+      "trim": 0,
+      "fit": "contain",
+      "transition": "fade",
+      "volume": 0,
+      "auto_length": true,
+      "match_length_to": "talking_head"
+    }
+  ],
+  "output": {
+    "fps": 25,
+    "resolution": "1080",
+    "aspect_ratio": "9:16"
+  },
+  "background": "#000000",
+  "subtitles": [
+    {
+      "start": 0.3,
+      "length": 3.5,
+      "text": "Йоу! Смотрите какие скидки только в Яндекс Еде вместе с Плюс."
+    },
+    {
+      "start": 4.0,
+      "length": 3.5,
+      "text": "А если добавить промокод KZ3000, то будет вообще невероятно!"
+    },
+    {
+      "start": 7.8,
+      "length": 3.0,
+      "text": "Закажи сейчас!"
+    }
+  ]
+}
