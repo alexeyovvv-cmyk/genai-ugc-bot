@@ -270,6 +270,85 @@ else:
 **Возвращает:**
 - `int`: Номер страницы
 
+#### `set_video_format(tg_id: int, format: str) -> None`
+Устанавливает формат видео для пользователя.
+
+**Параметры:**
+- `tg_id` (int): Telegram ID пользователя
+- `format` (str): Формат видео ('talking_head', 'character_with_background')
+
+**Возвращает:**
+- `None`
+
+#### `get_video_format(tg_id: int) -> Optional[str]`
+Получает формат видео пользователя.
+
+**Параметры:**
+- `tg_id` (int): Telegram ID пользователя
+
+**Возвращает:**
+- `Optional[str]`: Формат видео или None
+
+#### `set_background_video_path(tg_id: int, path: str) -> None`
+Устанавливает путь к фоновому видео на R2 для пользователя.
+
+**Параметры:**
+- `tg_id` (int): Telegram ID пользователя
+- `path` (str): R2 ключ фонового видео
+
+**Возвращает:**
+- `None`
+
+#### `get_background_video_path(tg_id: int) -> Optional[str]`
+Получает путь к фоновому видео на R2 для пользователя.
+
+**Параметры:**
+- `tg_id` (int): Telegram ID пользователя
+
+**Возвращает:**
+- `Optional[str]`: R2 ключ фонового видео или None
+
+### Video Utilities API
+
+#### `get_video_duration(video_path: str) -> Optional[float]`
+Получает длительность видео файла в секундах.
+
+**Параметры:**
+- `video_path` (str): Путь к видео файлу
+
+**Возвращает:**
+- `Optional[float]`: Длительность в секундах или None при ошибке
+
+**Пример:**
+```python
+from tg_bot.utils.video import get_video_duration
+
+duration = get_video_duration("video.mp4")
+if duration:
+    print(f"Video duration: {duration:.1f} seconds")
+```
+
+#### `check_video_duration_limit(video_path: str, max_seconds: float = 15.0) -> Tuple[bool, float]`
+Проверяет, соответствует ли видео лимиту длительности.
+
+**Параметры:**
+- `video_path` (str): Путь к видео файлу
+- `max_seconds` (float): Максимально допустимая длительность в секундах
+
+**Возвращает:**
+- `Tuple[bool, float]`: Кортеж (валидно, длительность_в_секундах)
+
+**Пример:**
+```python
+from tg_bot.utils.video import check_video_duration_limit
+
+is_valid, duration = check_video_duration_limit("video.mp4", max_seconds=15.0)
+if is_valid:
+    print(f"Video is valid ({duration:.1f}s)")
+else:
+    print(f"Video too long: {duration:.1f}s")
+```
+
 ### File Management API
 
 #### `list_character_images(gender: str, page: int = 0, limit: int = 5) -> Tuple[List[Tuple[str, str]], bool]`

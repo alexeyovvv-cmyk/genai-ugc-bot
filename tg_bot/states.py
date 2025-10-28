@@ -16,6 +16,8 @@ class VideoGen(StatesGroup):
 
 class UGCCreation(StatesGroup):
     """Состояния для создания UGC рекламы"""
+    waiting_format_selection = State()  # ждем выбор формата видео
+    waiting_background_video = State()  # ждем загрузку фонового видео
     waiting_gender_selection = State()  # ждем выбор пола персонажа
     waiting_character_gallery = State()  # ждем выбор персонажа из галереи
     waiting_voice_gallery = State()  # ждем выбор голоса из галереи с пагинацией

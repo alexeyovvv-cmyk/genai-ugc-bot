@@ -255,3 +255,46 @@ def get_voice_page(tg_id: int) -> int:
         state = db.scalar(select(UserState).where(UserState.user_id == user.id))
         return state.voice_page if state and state.voice_page is not None else 0
 
+
+# Video format state helpers
+def set_video_format(tg_id: int, format: Optional[str]) -> None:
+    """Set video format for user ('talking_head' or 'character_with_background')"""
+    with SessionLocal() as db:
+        user = db.scalar(select(User).where(User.tg_id == tg_id))
+        if not user:
+            return
+        state = _get_or_create_state(db, user.id)
+        state.video_format = format
+        db.commit()
+
+
+def get_video_format(tg_id: int) -> Optional[str]:
+    """Get video format for user"""
+    with SessionLocal() as db:
+        user = db.scalar(select(User).where(User.tg_id == tg_id))
+        if not user:
+            return None
+        state = db.scalar(select(UserState).where(UserState.user_id == user.id))
+        return state.video_format if state else None
+
+
+def set_background_video_path(tg_id: int, path: Optional[str]) -> None:
+    """Set background video path for user (R2 key)"""
+    with SessionLocal() as db:
+        user = db.scalar(select(User).where(User.tg_id == tg_id))
+        if not user:
+            return
+        state = _get_or_create_state(db, user.id)
+        state.background_video_path = path
+        db.commit()
+
+
+def get_background_video_path(tg_id: int) -> Optional[str]:
+    """Get background video path for user (R2 key)"""
+    with SessionLocal() as db:
+        user = db.scalar(select(User).where(User.tg_id == tg_id))
+        if not user:
+            return None
+        state = db.scalar(select(UserState).where(UserState.user_id == user.id))
+        return state.background_video_path if state else None
+

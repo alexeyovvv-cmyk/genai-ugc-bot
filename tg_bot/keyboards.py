@@ -250,3 +250,11 @@ def edit_error_menu():
         [InlineKeyboardButton(text="🔄 Попробовать другой промпт", callback_data="retry_edit_prompt")],
         [InlineKeyboardButton(text="📷 Использовать оригинал", callback_data="use_original_character")]
     ])
+
+def format_selection_menu():
+    """Меню выбора формата видео"""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="👤 Говорящая голова", callback_data="format_talking_head")],
+        [InlineKeyboardButton(text="🎬 Персонаж с бекграундом", callback_data="format_character_background")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")]
+    ])

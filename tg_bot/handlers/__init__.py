@@ -16,6 +16,7 @@ def register_all_handlers(dp: Dispatcher):
     # Import all handler modules to register their decorators
     from . import (
         start,
+        format_selection,
         character_selection,
         character_editing,
         # voice_selection,  # DEPRECATED: voice selection removed, using automatic voice mapping

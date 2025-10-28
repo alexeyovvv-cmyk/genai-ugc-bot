@@ -58,6 +58,9 @@ class UserState(Base):
     original_character_path: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # путь к оригинальному изображению персонажа
     edited_character_path: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # путь к отредактированной версии
     edit_iteration_count: Mapped[Optional[int]] = mapped_column(Integer, default=0)  # количество итераций редактирования
+    # Video format fields
+    video_format: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # формат видео ('talking_head', 'character_with_background')
+    background_video_path: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # путь к фоновому видео на R2
     created_at: Mapped[str] = mapped_column(DateTime, server_default=func.now())
     # updated_at можно добавить позже триггером, пока не требуется
 

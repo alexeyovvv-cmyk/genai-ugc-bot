@@ -66,23 +66,10 @@ async def back_to_ugc(c: CallbackQuery, state: FSMContext):
 
 
 @dp.callback_query(F.data == "create_ugc")
-async def start_ugc_creation(c: CallbackQuery):
-    """Start UGC creation process"""
-    from tg_bot.utils.credits import ensure_user
-    # Гарантируем, что пользователь и его состояние существуют
-    ensure_user(
-        c.from_user.id,
-        first_name=c.from_user.first_name,
-        last_name=c.from_user.last_name,
-        username=c.from_user.username
-    )
-    await c.message.edit_text(
-        "🎬 <b>Создание UGC-like рекламы</b>\n\n"
-        "Давай выберем походящего персонажа для вашей рекламы:",
-        parse_mode="HTML",
-        reply_markup=ugc_start_menu()
-    )
-    await c.answer()
+async def start_ugc_creation(c: CallbackQuery, state: FSMContext):
+    """Start UGC creation process - redirect to format selection"""
+    from tg_bot.handlers.format_selection import show_format_selection
+    await show_format_selection(c, state)
 
 
 @dp.callback_query(F.data == "create_character")
@@ -123,3 +110,41 @@ async def open_create_ads(m: Message, state: FSMContext):
         parse_mode="HTML",
         reply_markup=ugc_start_menu()
     )
+
+
+@dp.message(Command("create"))
+async def open_create(m: Message, state: FSMContext):
+    """Handle /create command - redirect to format selection"""
+    from tg_bot.utils.credits import ensure_user
+    ensure_user(
+        m.from_user.id,
+        first_name=m.from_user.first_name,
+        last_name=m.from_user.last_name,
+        username=m.from_user.username
+    )
+    await state.clear()
+    
+    from tg_bot.handlers.format_selection import show_format_selection
+    from tg_bot.keyboards import format_selection_menu
+    
+    # Отправляем сообщение с выбором формата
+    msg = await m.answer(
+        "🎬 <b>Выбор формата видео</b>\n\n"
+        "Выберите формат для вашей UGC рекламы:\n\n"
+        "👤 <b>Говорящая голова</b> - классический формат с персонажем\n"
+        "🎬 <b>Персонаж с бекграундом</b> - персонаж на фоне вашего видео\n\n"
+        "Сейчас отправлю примеры форматов...",
+        parse_mode="HTML",
+        reply_markup=format_selection_menu()
+    )
+    
+    # Устанавливаем состояние
+    from tg_bot.states import UGCCreation
+    await state.set_state(UGCCreation.waiting_format_selection)
+    
+    # Отправляем примеры
+    from tg_bot.handlers.format_selection import send_format_examples
+    try:
+        await send_format_examples(msg)
+    except Exception as e:
+        logger.error(f"Failed to send format examples: {e}")

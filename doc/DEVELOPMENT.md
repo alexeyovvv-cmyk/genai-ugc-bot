@@ -124,6 +124,68 @@ def new_utility_function(data: List[str]) -> Optional[str]:
         return None
 ```
 
+## 🎬 Работа с форматами видео
+
+### Выбор формата видео
+
+Бот поддерживает два формата UGC видео:
+
+1. **Говорящая голова** (`talking_head`) - классический формат с AI-персонажем
+2. **Персонаж с бекграундом** (`character_with_background`) - персонаж на фоне пользовательского видео
+
+### Проверка длительности видео
+
+```python
+from tg_bot.utils.video import check_video_duration_limit
+
+# Проверить длительность видео (макс 15 сек)
+is_valid, duration = check_video_duration_limit("video.mp4", max_seconds=15.0)
+
+if is_valid:
+    print(f"Video OK: {duration:.1f}s")
+else:
+    print(f"Video too long: {duration:.1f}s, max 15s")
+```
+
+### Работа с фоновыми видео
+
+Фоновые видео хранятся на R2 в структуре `users/{user_id}/backgrounds/`:
+
+```python
+from tg_bot.utils.user_state import set_background_video_path, get_background_video_path
+from tg_bot.services.r2_service import upload_file
+
+# Загрузить фоновое видео на R2
+r2_key = f"users/{user_id}/backgrounds/background_{timestamp}.mp4"
+upload_file(local_path, r2_key)
+
+# Сохранить путь в состоянии пользователя
+set_background_video_path(user_id, r2_key)
+
+# Получить путь к фоновому видео
+bg_path = get_background_video_path(user_id)
+```
+
+### Добавление новых форматов
+
+Чтобы добавить новый формат видео:
+
+1. Добавить новое значение в `video_format` (models.py)
+2. Создать кнопку в `format_selection_menu()` (keyboards.py)
+3. Добавить handler в `format_selection.py`
+4. Загрузить пример формата в `examples/{format_name}.mp4` на R2
+
+### Примеры форматов на R2
+
+Примеры форматов хранятся в папке `examples/` на R2:
+- `examples/talking_head.mp4` - пример говорящей головы
+- `examples/character_with_background.mp4` - пример персонажа с бекграундом
+
+Для создания/обновления примеров используйте скрипт:
+```bash
+python create_r2_examples.py
+```
+
 ## 🗄️ Работа с базой данных
 
 ### Добавление новой модели
