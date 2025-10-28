@@ -1,34 +1,35 @@
-# Используем официальный Python образ
+# Use Python 3.11 slim image
 FROM python:3.11-slim
 
-# Устанавливаем системные зависимости
-RUN apt-get update && apt-get install -y \
-    gcc \
-    g++ \
-    && rm -rf /var/lib/apt/lists/*
-
-# Устанавливаем рабочую директорию
+# Set working directory
 WORKDIR /app
 
-# Копируем файлы зависимостей
-COPY tg_bot/requirements.txt .
+# Install system dependencies for OpenCV and video processing
+RUN apt-get update && apt-get install -y \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender1 \
+    libgomp1 \
+    libgthread-2.0-0 \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
 
-# Обновляем pip и устанавливаем зависимости
-RUN python -m pip install --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+# Copy requirements first for better caching
+COPY requirements.txt .
 
-# Копируем весь проект
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
 COPY . .
 
-# Создаем директории для данных (если их нет)
-RUN mkdir -p data/audio/voices data/characters data/video
+# Set Python path to include video_editing directory
+ENV PYTHONPATH=/app:$PYTHONPATH
 
-# Устанавливаем переменные окружения
-ENV PYTHONPATH=/app
-ENV PYTHONUNBUFFERED=1
+# Expose port
+EXPOSE 8080
 
-# Открываем порт (Railway автоматически назначает PORT)
-# EXPOSE будет установлен Railway автоматически
-
-# Команда запуска
+# Run the bot
 CMD ["python", "-m", "tg_bot.main"]
