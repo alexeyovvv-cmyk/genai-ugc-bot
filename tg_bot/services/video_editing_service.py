@@ -39,7 +39,8 @@ def extract_video_url_from_output(stdout: str) -> Optional[str]:
     - template_name: https://shotstack.io/.../video.mp4
     """
     # Ищем URL в формате: "- <name>: <url>"
-    pattern = r'- \w+:\s+(https?://[^\s]+\.mp4)'
+    # Используем .+ вместо \w+ чтобы захватить точки и подчеркивания в названии
+    pattern = r'- .+:\s+(https?://[^\s]+\.mp4)'
     match = re.search(pattern, stdout)
     if match:
         return match.group(1)
@@ -124,6 +125,7 @@ async def add_subtitles_to_video(
                 "--subtitles-enabled", "auto",
                 "--transcript", text,
                 "--output-dir", str(output_dir),
+                "--rembg-model", "u2net_human_seg",  # быстрая модель для людей
             ]
             
             logger.info(f"Running autopipeline: {' '.join(cmd)}")
@@ -132,6 +134,9 @@ async def add_subtitles_to_video(
             env = os.environ.copy()
             env["SHOTSTACK_API_KEY"] = api_key
             env["SHOTSTACK_STAGE"] = stage
+            # Оптимизации скорости
+            env["SHOTSTACK_POLL_SECONDS"] = "3"  # чаще проверять статус рендера
+            env["U2NET_HOME"] = "/tmp/.u2net"  # кэш rembg моделей
             
             result = subprocess.run(
                 cmd,
@@ -248,6 +253,7 @@ async def composite_head_with_background(
                 "--subtitles-enabled", "auto",
                 "--transcript", text,
                 "--output-dir", str(output_dir),
+                "--rembg-model", "u2net_human_seg",  # быстрая модель для людей
             ]
             
             logger.info(f"Running autopipeline: {' '.join(cmd)}")
@@ -255,6 +261,9 @@ async def composite_head_with_background(
             env = os.environ.copy()
             env["SHOTSTACK_API_KEY"] = api_key
             env["SHOTSTACK_STAGE"] = stage
+            # Оптимизации скорости
+            env["SHOTSTACK_POLL_SECONDS"] = "3"  # чаще проверять статус рендера
+            env["U2NET_HOME"] = "/tmp/.u2net"  # кэш rembg моделей
             
             result = subprocess.run(
                 cmd,
