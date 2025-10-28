@@ -5,12 +5,13 @@ This module handles:
 - Video editing (subtitles, compositing)
 - Finishing generation flow without editing
 - Re-editing support (multiple iterations)
+- Resume editing after bot restart
 """
 import logging
 from aiogram import F
-from aiogram.types import CallbackQuery
+from aiogram.types import CallbackQuery, Message
 from aiogram.fsm.context import FSMContext
-from aiogram.filters import StateFilter
+from aiogram.filters import StateFilter, Command
 
 from tg_bot.states import UGCCreation
 from tg_bot.keyboards import main_menu, video_editing_menu
@@ -32,6 +33,43 @@ from tg_bot.dispatcher import dp
 from tg_bot.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
+
+
+@dp.message(Command("resume"))
+async def resume_editing_command(m: Message, state: FSMContext):
+    """Системная команда для возобновления монтажа после перезапуска бота"""
+    # Проверяем, есть ли сохраненное видео
+    video_data = get_original_video(m.from_user.id)
+    
+    if not video_data or not video_data.get('r2_key'):
+        await m.answer(
+            "❌ Нет незавершенного монтажа.\n\n"
+            "Создайте новое видео:",
+            reply_markup=main_menu()
+        )
+        return
+    
+    # Проверяем, было ли уже отредактированное видео
+    edited_video = get_last_generated_video(m.from_user.id)
+    
+    if edited_video and edited_video.get('r2_key'):
+        # Уже есть отредактированная версия
+        await m.answer(
+            "✅ Найдено отредактированное видео!\n\n"
+            "Хочешь смонтировать еще раз или завершить?",
+            reply_markup=video_editing_menu()
+        )
+    else:
+        # Есть только исходное видео
+        await m.answer(
+            "✅ Найдено исходное видео!\n\n"
+            "Хочешь смонтировать его?",
+            reply_markup=video_editing_menu()
+        )
+    
+    # Устанавливаем состояние
+    await state.set_state(UGCCreation.waiting_editing_decision)
+    logger.info(f"User {m.from_user.id} resumed editing session via /resume command")
 
 
 @dp.callback_query(F.data == "start_video_editing", StateFilter(UGCCreation.waiting_editing_decision))
