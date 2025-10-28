@@ -6,12 +6,15 @@
 """
 import logging
 import os
+import re
 import subprocess
 import sys
 import tempfile
 import time
 from pathlib import Path
 from typing import Dict, Optional
+
+import requests
 
 from .r2_service import upload_file, get_presigned_url
 
@@ -25,6 +28,49 @@ AUTOPIPELINE_SCRIPT = VIDEO_EDITING_DIR / "autopipeline.py"
 class VideoEditingError(Exception):
     """Ошибка при монтаже видео"""
     pass
+
+
+def extract_video_url_from_output(stdout: str) -> Optional[str]:
+    """
+    Извлечь URL видео из вывода autopipeline.
+    
+    Autopipeline выводит в конце:
+    Результаты:
+    - template_name: https://shotstack.io/.../video.mp4
+    """
+    # Ищем URL в формате: "- <name>: <url>"
+    pattern = r'- \w+:\s+(https?://[^\s]+\.mp4)'
+    match = re.search(pattern, stdout)
+    if match:
+        return match.group(1)
+    return None
+
+
+def download_video_from_url(url: str, local_path: str) -> bool:
+    """
+    Скачать видео по URL.
+    
+    Args:
+        url: URL видео
+        local_path: путь для сохранения
+    
+    Returns:
+        bool: успешность скачивания
+    """
+    try:
+        logger.info(f"Downloading video from {url}")
+        response = requests.get(url, stream=True, timeout=300)
+        response.raise_for_status()
+        
+        with open(local_path, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                f.write(chunk)
+        
+        logger.info(f"Video downloaded successfully to {local_path}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to download video: {e}")
+        return False
 
 
 async def add_subtitles_to_video(
@@ -96,24 +142,31 @@ async def add_subtitles_to_video(
             )
             
             if result.returncode != 0:
-                logger.error(f"Autopipeline failed: {result.stderr}")
+                logger.error(f"Autopipeline failed with code {result.returncode}")
+                logger.error(f"STDERR: {result.stderr}")
+                logger.error(f"STDOUT: {result.stdout}")
                 raise VideoEditingError(f"Autopipeline failed: {result.stderr[:200]}")
             
-            logger.info(f"Autopipeline output: {result.stdout}")
+            logger.info(f"Autopipeline completed successfully")
+            logger.info(f"STDOUT: {result.stdout}")
+            if result.stderr:
+                logger.info(f"STDERR: {result.stderr}")
             
-            # 4. Найти результирующий файл
-            # autopipeline сохраняет результаты как basic_final.mp4 (или аналогично)
-            result_files = list(output_dir.glob("*.mp4"))
-            if not result_files:
-                # Попробуем найти в build/
-                build_dir = VIDEO_EDITING_DIR / "build"
-                result_files = list(build_dir.glob("**/basic_final.mp4"))
+            # 4. Извлечь URL видео из вывода
+            video_url = extract_video_url_from_output(result.stdout)
+            if not video_url:
+                logger.error(f"Failed to extract video URL from output")
+                logger.error(f"Full stdout: {result.stdout}")
+                raise VideoEditingError("Failed to extract video URL from autopipeline output")
             
-            if not result_files:
-                raise VideoEditingError("No output video found after autopipeline")
+            logger.info(f"Extracted video URL: {video_url}")
             
-            result_file = result_files[0]
-            logger.info(f"Found result file: {result_file}")
+            # 5. Скачать видео
+            result_file = Path(tmpdir) / f"subtitled_{user_id}_{int(time.time())}.mp4"
+            if not download_video_from_url(video_url, str(result_file)):
+                raise VideoEditingError("Failed to download rendered video from Shotstack")
+            
+            logger.info(f"Downloaded video to: {result_file}")
             
             # 5. Загрузить результат в R2
             timestamp = int(time.time())
@@ -212,22 +265,31 @@ async def composite_head_with_background(
             )
             
             if result.returncode != 0:
-                logger.error(f"Autopipeline failed: {result.stderr}")
+                logger.error(f"Autopipeline failed with code {result.returncode}")
+                logger.error(f"STDERR: {result.stderr}")
+                logger.error(f"STDOUT: {result.stdout}")
                 raise VideoEditingError(f"Autopipeline failed: {result.stderr[:200]}")
             
-            logger.info(f"Autopipeline output: {result.stdout}")
+            logger.info(f"Autopipeline completed successfully")
+            logger.info(f"STDOUT: {result.stdout}")
+            if result.stderr:
+                logger.info(f"STDERR: {result.stderr}")
             
-            # 4. Найти результирующий файл
-            result_files = list(output_dir.glob("*.mp4"))
-            if not result_files:
-                build_dir = VIDEO_EDITING_DIR / "build"
-                result_files = list(build_dir.glob("**/mix_basic_circle_final.mp4"))
+            # 4. Извлечь URL видео из вывода
+            video_url = extract_video_url_from_output(result.stdout)
+            if not video_url:
+                logger.error(f"Failed to extract video URL from output")
+                logger.error(f"Full stdout: {result.stdout}")
+                raise VideoEditingError("Failed to extract video URL from autopipeline output")
             
-            if not result_files:
-                raise VideoEditingError("No output video found after autopipeline")
+            logger.info(f"Extracted video URL: {video_url}")
             
-            result_file = result_files[0]
-            logger.info(f"Found result file: {result_file}")
+            # 5. Скачать видео
+            result_file = Path(tmpdir) / f"composite_{user_id}_{int(time.time())}.mp4"
+            if not download_video_from_url(video_url, str(result_file)):
+                raise VideoEditingError("Failed to download rendered video from Shotstack")
+            
+            logger.info(f"Downloaded video to: {result_file}")
             
             # 5. Загрузить результат в R2
             timestamp = int(time.time())
