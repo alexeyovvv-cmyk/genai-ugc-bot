@@ -13,8 +13,7 @@ import time
 from pathlib import Path
 from typing import Dict, Optional
 
-from ..config import r2_client, BUCKET_NAME
-from ..utils.r2_utils import upload_file_to_r2, get_presigned_url
+from .r2_service import upload_file, get_presigned_url
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +52,7 @@ async def add_subtitles_to_video(
         logger.info(f"Starting subtitle overlay for user {user_id}, video {video_r2_key}")
         
         # 1. Получить presigned URL для исходного видео
-        head_url = get_presigned_url(video_r2_key, expiration=3600)
+        head_url = get_presigned_url(video_r2_key, expiry_hours=1)
         if not head_url:
             raise VideoEditingError(f"Failed to get presigned URL for {video_r2_key}")
         
@@ -120,12 +119,12 @@ async def add_subtitles_to_video(
             timestamp = int(time.time())
             result_r2_key = f"users/{user_id}/edited_videos/subtitled_{timestamp}.mp4"
             
-            upload_success = upload_file_to_r2(str(result_file), result_r2_key)
+            upload_success = upload_file(str(result_file), result_r2_key)
             if not upload_success:
                 raise VideoEditingError("Failed to upload result to R2")
             
             # 6. Получить presigned URL для результата
-            result_url = get_presigned_url(result_r2_key, expiration=86400)  # 24 часа
+            result_url = get_presigned_url(result_r2_key, expiry_hours=24)  # 24 часа
             
             logger.info(f"Successfully created subtitled video: {result_r2_key}")
             
@@ -169,8 +168,8 @@ async def composite_head_with_background(
         logger.info(f"Starting composite for user {user_id}, head={head_r2_key}, bg={background_r2_key}")
         
         # 1. Получить presigned URLs
-        head_url = get_presigned_url(head_r2_key, expiration=3600)
-        bg_url = get_presigned_url(background_r2_key, expiration=3600)
+        head_url = get_presigned_url(head_r2_key, expiry_hours=1)
+        bg_url = get_presigned_url(background_r2_key, expiry_hours=1)
         
         if not head_url or not bg_url:
             raise VideoEditingError("Failed to get presigned URLs")
@@ -234,12 +233,12 @@ async def composite_head_with_background(
             timestamp = int(time.time())
             result_r2_key = f"users/{user_id}/edited_videos/composite_{timestamp}.mp4"
             
-            upload_success = upload_file_to_r2(str(result_file), result_r2_key)
+            upload_success = upload_file(str(result_file), result_r2_key)
             if not upload_success:
                 raise VideoEditingError("Failed to upload result to R2")
             
             # 6. Получить presigned URL
-            result_url = get_presigned_url(result_r2_key, expiration=86400)
+            result_url = get_presigned_url(result_r2_key, expiry_hours=24)
             
             logger.info(f"Successfully created composite video: {result_r2_key}")
             
