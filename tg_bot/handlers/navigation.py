@@ -124,27 +124,22 @@ async def open_create(m: Message, state: FSMContext):
     )
     await state.clear()
     
-    from tg_bot.handlers.format_selection import show_format_selection
+    from tg_bot.handlers.format_selection import send_format_examples
     from tg_bot.keyboards import format_selection_menu
+    from tg_bot.states import UGCCreation
     
-    # Отправляем сообщение с выбором формата
-    msg = await m.answer(
-        "🎬 <b>Выбор формата видео</b>\n\n"
-        "Выберите формат для вашей UGC рекламы:\n\n"
-        "👤 <b>Говорящая голова</b> - классический формат с персонажем\n"
-        "🎬 <b>Персонаж с бекграундом</b> - персонаж на фоне вашего видео\n\n"
-        "Сейчас отправлю примеры форматов...",
+    # Сначала отправляем примеры видео
+    try:
+        await send_format_examples(m)
+    except Exception as e:
+        logger.error(f"Failed to send format examples: {e}")
+    
+    # Сразу после примеров отправляем сообщение с кнопками выбора
+    await m.answer(
+        "☝️ Выберите формат:",
         parse_mode="HTML",
         reply_markup=format_selection_menu()
     )
     
     # Устанавливаем состояние
-    from tg_bot.states import UGCCreation
     await state.set_state(UGCCreation.waiting_format_selection)
-    
-    # Отправляем примеры
-    from tg_bot.handlers.format_selection import send_format_examples
-    try:
-        await send_format_examples(msg)
-    except Exception as e:
-        logger.error(f"Failed to send format examples: {e}")

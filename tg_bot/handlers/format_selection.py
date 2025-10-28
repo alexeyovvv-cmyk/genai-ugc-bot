@@ -9,13 +9,12 @@ This module contains handlers for:
 import os
 import time
 from aiogram import F
-from aiogram.types import CallbackQuery, Message, FSInputFile
+from aiogram.types import CallbackQuery, Message, FSInputFile, InputMediaVideo
 from aiogram.fsm.context import FSMContext
 
 from tg_bot.states import UGCCreation
 from tg_bot.utils.credits import ensure_user
 from tg_bot.utils.user_state import set_video_format, set_background_video_path
-from tg_bot.utils.video import check_video_duration_limit
 from tg_bot.keyboards import format_selection_menu, back_to_main_menu
 from tg_bot.services.r2_service import download_file, upload_file, get_presigned_url
 from tg_bot.utils.logger import setup_logger
@@ -40,13 +39,15 @@ async def show_format_selection(c: CallbackQuery, state: FSMContext):
         username=c.from_user.username
     )
     
-    # Отправляем текстовое сообщение с выбором формата
+    # Сначала отправляем примеры видео
+    try:
+        await send_format_examples(c.message)
+    except Exception as e:
+        logger.error(f"Failed to send format examples: {e}")
+    
+    # Сразу после примеров отправляем сообщение с кнопками выбора
     await c.message.edit_text(
-        "🎬 <b>Выбор формата видео</b>\n\n"
-        "Выберите формат для вашей UGC рекламы:\n\n"
-        "👤 <b>Говорящая голова</b> - классический формат с персонажем\n"
-        "🎬 <b>Персонаж с бекграундом</b> - персонаж на фоне вашего видео\n\n"
-        "Сейчас отправлю примеры форматов...",
+        "☝️ Выберите формат:",
         parse_mode="HTML",
         reply_markup=format_selection_menu()
     )
@@ -54,69 +55,75 @@ async def show_format_selection(c: CallbackQuery, state: FSMContext):
     # Устанавливаем состояние ожидания выбора формата
     await state.set_state(UGCCreation.waiting_format_selection)
     await c.answer()
-    
-    # Отправляем примеры видео из R2 (асинхронно, не блокируем пользователя)
-    try:
-        await send_format_examples(c.message)
-    except Exception as e:
-        logger.error(f"Failed to send format examples: {e}")
-        await c.message.answer(
-            "⚠️ Не удалось загрузить примеры форматов, но вы можете продолжить выбор.",
-            parse_mode="HTML"
-        )
 
 
 async def send_format_examples(message):
-    """Отправить примеры форматов видео из R2"""
-    temp_dir = "temp_downloads"
-    os.makedirs(temp_dir, exist_ok=True)
-    
-    # Пути для временных файлов
-    talking_head_path = os.path.join(temp_dir, "example_talking_head.mp4")
-    character_bg_path = os.path.join(temp_dir, "example_character_bg.mp4")
-    
+    """Отправить примеры форматов видео из R2 как media group (компактно)"""
     try:
-        # Попробуем получить presigned URLs для прямой отправки
+        # Получаем presigned URLs для прямой отправки
         talking_head_url = get_presigned_url(EXAMPLE_TALKING_HEAD_KEY, expiry_hours=1)
         character_bg_url = get_presigned_url(EXAMPLE_CHARACTER_BACKGROUND_KEY, expiry_hours=1)
         
         if talking_head_url and character_bg_url:
-            # Отправляем URL напрямую (быстрее)
-            await message.answer_video(
-                talking_head_url,
-                caption="📹 <b>Пример: Говорящая голова</b>",
-                parse_mode="HTML"
-            )
-            await message.answer_video(
-                character_bg_url,
-                caption="📹 <b>Пример: Персонаж с бекграундом</b>",
-                parse_mode="HTML"
-            )
-            logger.info("Format examples sent via presigned URLs")
+            # Отправляем как media group (альбом) - будет компактнее
+            media = [
+                InputMediaVideo(
+                    media=talking_head_url,
+                    caption=(
+                        "🎬 <b>Выберите формат для вашей UGC рекламы:</b>\n\n"
+                        "👤 <b>Говорящая голова</b> - классический формат с персонажем"
+                    ),
+                    parse_mode="HTML"
+                ),
+                InputMediaVideo(
+                    media=character_bg_url,
+                    caption="🎬 <b>Персонаж с бекграундом</b> - персонаж на фоне вашего видео",
+                    parse_mode="HTML"
+                )
+            ]
+            await message.answer_media_group(media)
+            logger.info("Format examples sent as media group via presigned URLs")
             return
     except Exception as e:
         logger.warning(f"Failed to send examples via URLs: {e}, trying download method")
     
-    # Fallback: скачиваем и отправляем локально
+    # Fallback: скачиваем и отправляем локально как media group
+    temp_dir = "temp_downloads"
+    os.makedirs(temp_dir, exist_ok=True)
+    
+    talking_head_path = os.path.join(temp_dir, "example_talking_head.mp4")
+    character_bg_path = os.path.join(temp_dir, "example_character_bg.mp4")
+    
     try:
         # Скачиваем примеры из R2
-        if download_file(EXAMPLE_TALKING_HEAD_KEY, talking_head_path):
-            await message.answer_video(
-                FSInputFile(talking_head_path),
-                caption="📹 <b>Пример: Говорящая голова</b>",
-                parse_mode="HTML"
-            )
+        talking_head_downloaded = download_file(EXAMPLE_TALKING_HEAD_KEY, talking_head_path)
+        character_bg_downloaded = download_file(EXAMPLE_CHARACTER_BACKGROUND_KEY, character_bg_path)
+        
+        if talking_head_downloaded and character_bg_downloaded:
+            # Отправляем как media group
+            media = [
+                InputMediaVideo(
+                    media=FSInputFile(talking_head_path),
+                    caption=(
+                        "🎬 <b>Выберите формат для вашей UGC рекламы:</b>\n\n"
+                        "👤 <b>Говорящая голова</b> - классический формат с персонажем"
+                    ),
+                    parse_mode="HTML"
+                ),
+                InputMediaVideo(
+                    media=FSInputFile(character_bg_path),
+                    caption="🎬 <b>Персонаж с бекграундом</b> - персонаж на фоне вашего видео",
+                    parse_mode="HTML"
+                )
+            ]
+            await message.answer_media_group(media)
+            logger.info("Format examples sent as media group via download method")
+            
+            # Удаляем временные файлы
             os.remove(talking_head_path)
-        
-        if download_file(EXAMPLE_CHARACTER_BACKGROUND_KEY, character_bg_path):
-            await message.answer_video(
-                FSInputFile(character_bg_path),
-                caption="📹 <b>Пример: Персонаж с бекграундом</b>",
-                parse_mode="HTML"
-            )
             os.remove(character_bg_path)
-        
-        logger.info("Format examples sent via download method")
+        else:
+            logger.error("Failed to download one or both example videos")
     except Exception as e:
         logger.error(f"Failed to send format examples via download: {e}")
 
@@ -154,8 +161,8 @@ async def format_character_background_selected(c: CallbackQuery, state: FSMConte
         "🎬 <b>Загрузка фонового видео</b>\n\n"
         "Отправьте видео, которое будет на фоне у персонажа.\n\n"
         "⚠️ <b>Требования:</b>\n"
-        "• Максимальная длительность: 15 секунд\n"
-        "• Формат: MP4, MOV, AVI\n\n"
+        "• Формат: MP4, MOV, AVI\n"
+        "• Рекомендуемая длительность: до 15 секунд\n\n"
         "Загрузите видео как файл или видео-сообщение.",
         parse_mode="HTML",
         reply_markup=back_to_main_menu()
@@ -203,25 +210,7 @@ async def handle_background_video_upload(m: Message, state: FSMContext):
         await bot.download_file(file.file_path, temp_path)
         logger.info(f"Downloaded video to {temp_path}")
         
-        # Проверяем длительность видео
-        is_valid, duration = check_video_duration_limit(temp_path, max_seconds=15.0)
-        
-        if not is_valid:
-            # Видео слишком длинное
-            await processing_msg.edit_text(
-                f"❌ <b>Видео слишком длинное!</b>\n\n"
-                f"Длительность вашего видео: <b>{duration:.1f} секунд</b>\n"
-                f"Максимально допустимая длительность: <b>15 секунд</b>\n\n"
-                f"Пожалуйста, загрузите видео покороче.",
-                parse_mode="HTML",
-                reply_markup=back_to_main_menu()
-            )
-            # Удаляем временный файл
-            os.remove(temp_path)
-            logger.warning(f"User {m.from_user.id} video too long: {duration:.1f}s")
-            return
-        
-        # Видео валидное, загружаем на R2
+        # Загружаем на R2 (проверку длительности убрали, так как она не работает корректно)
         await processing_msg.edit_text("⏳ Сохраняю видео...")
         
         r2_key = f"users/{m.from_user.id}/backgrounds/background_{int(time.time())}.mp4"
@@ -246,7 +235,6 @@ async def handle_background_video_upload(m: Message, state: FSMContext):
         # Успешно загружено, переходим к выбору персонажа
         await processing_msg.edit_text(
             f"✅ <b>Видео успешно загружено!</b>\n\n"
-            f"Длительность: <b>{duration:.1f} секунд</b>\n\n"
             f"Теперь давайте выберем персонажа для вашей рекламы.",
             parse_mode="HTML"
         )
