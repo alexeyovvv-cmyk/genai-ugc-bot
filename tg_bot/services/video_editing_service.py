@@ -166,22 +166,36 @@ async def add_subtitles_to_video(
             logger.info(f"[MONTAGE] ⏱️ Autopipeline subprocess completed in {subprocess_duration:.2f}s")
             
             if result.returncode != 0:
-                logger.error(f"Autopipeline failed with code {result.returncode}")
-                logger.error(f"STDERR: {result.stderr}")
-                logger.error(f"STDOUT: {result.stdout}")
-                raise VideoEditingError(f"Autopipeline failed: {result.stderr[:200]}")
+                logger.error(f"[MONTAGE] ❌ Autopipeline failed with exit code {result.returncode}")
+                logger.error(f"[MONTAGE] STDERR ({len(result.stderr)} chars): {result.stderr}")
+                logger.error(f"[MONTAGE] STDOUT ({len(result.stdout)} chars): {result.stdout}")
+                raise VideoEditingError(f"Autopipeline failed (exit code {result.returncode}): {result.stderr[:500]}")
             
-            logger.info(f"Autopipeline completed successfully")
-            logger.info(f"STDOUT: {result.stdout}")
+            logger.info(f"[MONTAGE] ✅ Autopipeline completed successfully (exit code 0)")
+            logger.info(f"[MONTAGE] 📊 Output: {len(result.stdout)} chars stdout, {len(result.stderr)} chars stderr")
+            
+            # Логируем последние 20 строк stdout для диагностики
+            if result.stdout:
+                lines = [l for l in result.stdout.split('\n') if l.strip()]
+                logger.info(f"[MONTAGE] Last {min(20, len(lines))} lines of output:")
+                for line in lines[-20:]:
+                    logger.info(f"[MONTAGE]   {line}")
+            
             if result.stderr:
-                logger.info(f"STDERR: {result.stderr}")
+                logger.info(f"[MONTAGE] STDERR output: {result.stderr}")
             
             # 4. Извлечь URL видео из вывода
             video_url = extract_video_url_from_output(result.stdout)
             if not video_url:
-                logger.error(f"Failed to extract video URL from output")
-                logger.error(f"Full stdout: {result.stdout}")
-                raise VideoEditingError("Failed to extract video URL from autopipeline output")
+                logger.error(f"[MONTAGE] ❌ Failed to extract video URL from autopipeline output")
+                logger.error(f"[MONTAGE] 📊 Full stdout ({len(result.stdout)} chars):")
+                # Логируем весь stdout построчно для диагностики
+                for i, line in enumerate(result.stdout.split('\n'), 1):
+                    if line.strip():
+                        logger.error(f"[MONTAGE]   Line {i}: {line}")
+                if result.stderr:
+                    logger.error(f"[MONTAGE] Full stderr: {result.stderr}")
+                raise VideoEditingError(f"Failed to extract video URL. Output was {len(result.stdout)} chars. Last 500: {result.stdout[-500:]}")
             
             logger.info(f"Extracted video URL: {video_url}")
             
@@ -324,22 +338,36 @@ async def composite_head_with_background(
             logger.info(f"[MONTAGE] ⏱️ Autopipeline subprocess completed in {subprocess_duration:.2f}s")
             
             if result.returncode != 0:
-                logger.error(f"Autopipeline failed with code {result.returncode}")
-                logger.error(f"STDERR: {result.stderr}")
-                logger.error(f"STDOUT: {result.stdout}")
-                raise VideoEditingError(f"Autopipeline failed: {result.stderr[:200]}")
+                logger.error(f"[MONTAGE] ❌ Autopipeline failed with exit code {result.returncode}")
+                logger.error(f"[MONTAGE] STDERR ({len(result.stderr)} chars): {result.stderr}")
+                logger.error(f"[MONTAGE] STDOUT ({len(result.stdout)} chars): {result.stdout}")
+                raise VideoEditingError(f"Autopipeline failed (exit code {result.returncode}): {result.stderr[:500]}")
             
-            logger.info(f"Autopipeline completed successfully")
-            logger.info(f"STDOUT: {result.stdout}")
+            logger.info(f"[MONTAGE] ✅ Autopipeline completed successfully (exit code 0)")
+            logger.info(f"[MONTAGE] 📊 Output: {len(result.stdout)} chars stdout, {len(result.stderr)} chars stderr")
+            
+            # Логируем последние 20 строк stdout для диагностики
+            if result.stdout:
+                lines = [l for l in result.stdout.split('\n') if l.strip()]
+                logger.info(f"[MONTAGE] Last {min(20, len(lines))} lines of output:")
+                for line in lines[-20:]:
+                    logger.info(f"[MONTAGE]   {line}")
+            
             if result.stderr:
-                logger.info(f"STDERR: {result.stderr}")
+                logger.info(f"[MONTAGE] STDERR output: {result.stderr}")
             
             # 4. Извлечь URL видео из вывода
             video_url = extract_video_url_from_output(result.stdout)
             if not video_url:
-                logger.error(f"Failed to extract video URL from output")
-                logger.error(f"Full stdout: {result.stdout}")
-                raise VideoEditingError("Failed to extract video URL from autopipeline output")
+                logger.error(f"[MONTAGE] ❌ Failed to extract video URL from autopipeline output")
+                logger.error(f"[MONTAGE] 📊 Full stdout ({len(result.stdout)} chars):")
+                # Логируем весь stdout построчно для диагностики
+                for i, line in enumerate(result.stdout.split('\n'), 1):
+                    if line.strip():
+                        logger.error(f"[MONTAGE]   Line {i}: {line}")
+                if result.stderr:
+                    logger.error(f"[MONTAGE] Full stderr: {result.stderr}")
+                raise VideoEditingError(f"Failed to extract video URL. Output was {len(result.stdout)} chars. Last 500: {result.stdout[-500:]}")
             
             logger.info(f"Extracted video URL: {video_url}")
             

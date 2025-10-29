@@ -24,7 +24,8 @@ from tg_bot.utils.user_state import (
     get_character_gender, get_character_age,
     get_original_character_path, get_edited_character_path,
     clear_edit_session,
-    set_original_video
+    set_original_video,
+    get_selected_character_idx
 )
 from tg_bot.utils.voice_mapping import get_voice_for_character, get_default_language, get_default_emotion
 from tg_bot.utils.files import get_character_image
@@ -343,20 +344,50 @@ async def character_text_received(m: Message, state: FSMContext):
         if "Exhausted balance" in str(e) or "User is locked" in str(e) or "TTS service temporarily unavailable" in str(e):
             error_message += "\n\n🔧 Сервис временно недоступен. Попробуй позже."
         elif "заблокировано системой безопасности" in str(e) or "content_policy_violation" in str(e):
-            error_message += "\n\n🚫 Изображение персонажа заблокировано системой безопасности.\n\nПопробуй выбрать другого персонажа."
-            
             # Возвращаем кредит
             add_credits(m.from_user.id, COST_UGC_VIDEO, "refund_content_policy_violation")
             
-            # Очищаем состояние и возвращаем к выбору персонажа
-            await state.clear()
+            logger.info(f"[UGC] 🚫 Блокировка системы безопасности - возвращаем к редактированию персонажа")
             
-            # Отправляем сообщение с кнопкой выбора персонажа
+            # Получаем текущего персонажа для отображения
+            from tg_bot.utils.files import get_character_image
+            from tg_bot.keyboards import character_editing_choice_menu
+            
+            gender = get_character_gender(m.from_user.id)
+            character_idx = get_selected_character_idx(m.from_user.id)
+            
+            # Отправляем сообщение о нарушении правил
+            await m.answer(
+                "🚫 <b>Кажется, создаваемое видео нарушает правила площадки</b>\n\n"
+                "❗️ Изображение персонажа было заблокировано системой безопасности.\n\n"
+                "💡 Попробуй изменить персонажа с помощью редактирования или выбери другого:",
+                parse_mode="HTML"
+            )
+            
+            # Показываем текущего персонажа
+            if gender and character_idx is not None:
+                character_data = get_character_image(gender, character_idx)
+                if character_data:
+                    character_path, age = character_data
+                    try:
+                        # Отправляем изображение персонажа с предложением редактирования
+                        await m.answer_photo(
+                            FSInputFile(character_path),
+                            caption="🎨 <b>Хочешь отредактировать этого персонажа?</b>\n\n"
+                                    "Ты можешь изменить внешность, одежду или окружение.\n\n"
+                                    "Или выбери другого персонажа из галереи.",
+                            reply_markup=character_editing_choice_menu(),
+                            parse_mode="HTML"
+                        )
+                        await state.set_state(UGCCreation.waiting_editing_choice)
+                        return
+                    except Exception as photo_error:
+                        logger.error(f"[UGC] Не удалось отправить фото персонажа: {photo_error}")
+            
+            # Если не удалось показать персонажа, возвращаем к выбору
             from tg_bot.keyboards import gender_selection_menu
             await m.answer(
-                "🚫 <b>Изображение персонажа заблокировано системой безопасности</b>\n\n"
-                "Попробуй выбрать другого персонажа:",
-                parse_mode="HTML",
+                "Выбери персонажа:",
                 reply_markup=gender_selection_menu()
             )
             await state.set_state(UGCCreation.waiting_gender_selection)
