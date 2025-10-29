@@ -65,9 +65,41 @@ def run_ffmpeg(args: list[str]) -> None:
         raise RuntimeError(f"ffmpeg failed: {result.stderr.strip()}")
 
 
+# Global worker state (initialized once per process)
+_worker_segmentation = None
+_worker_rembg_session = None
+_worker_engine = None
+_worker_rembg_model = None
+
+
+def _init_worker(engine: str, rembg_model: Optional[str] = None):
+    """
+    Инициализация worker процесса - вызывается один раз при создании процесса.
+    Создаёт переиспользуемую сессию для mediapipe/rembg.
+    """
+    global _worker_segmentation, _worker_rembg_session, _worker_engine, _worker_rembg_model
+    
+    import warnings
+    import logging as log
+    
+    # Подавить прогресс-бары и предупреждения в worker процессах
+    warnings.filterwarnings('ignore')
+    log.getLogger('rembg').setLevel(log.ERROR)
+    
+    _worker_engine = engine
+    _worker_rembg_model = rembg_model
+    
+    if engine == "mediapipe":
+        _worker_segmentation = mp.solutions.selfie_segmentation.SelfieSegmentation(model_selection=1)
+    elif engine == "rembg":
+        if new_session is None:
+            raise RuntimeError("rembg not available")
+        # Создать сессию (модель скачается только при первом вызове в первом процессе)
+        _worker_rembg_session = new_session(model_name=rembg_model)
+
+
 def process_single_frame(
     frame_bgr: np.ndarray,
-    engine: str,
     threshold: float,
     feather: int,
     shape: str,
@@ -76,24 +108,26 @@ def process_single_frame(
 ) -> np.ndarray:
     """
     Обработка одного кадра: удаление фона и применение альфа-канала.
-    Эта функция будет вызываться в отдельных процессах.
+    Использует глобальную сессию, инициализированную в _init_worker().
     
     Returns:
         BGRA frame with alpha channel
     """
-    # Инициализация движка в worker процессе
-    if engine == "mediapipe":
-        segmentation = mp.solutions.selfie_segmentation.SelfieSegmentation(model_selection=1)
-        rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
-        mask = segmentation.process(rgb).segmentation_mask.astype(np.float32)
-        segmentation.close()
-    elif engine == "rembg":
-        if remove is None:
-            raise RuntimeError("rembg not available")
-        rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+    global _worker_segmentation, _worker_rembg_session, _worker_engine
+    
+    # Использовать предынициализированную сессию
+    rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+    
+    if _worker_engine == "mediapipe":
+        if _worker_segmentation is None:
+            raise RuntimeError("Worker not initialized properly")
+        mask = _worker_segmentation.process(rgb).segmentation_mask.astype(np.float32)
+    elif _worker_engine == "rembg":
+        if _worker_rembg_session is None or remove is None:
+            raise RuntimeError("Worker not initialized properly")
         mask_image = remove(
             Image.fromarray(rgb),
-            session=rembg_params.get("session") if rembg_params else None,
+            session=_worker_rembg_session,
             only_mask=True,
             alpha_matting=rembg_params.get("alpha_matting", False) if rembg_params else False,
             alpha_matting_foreground_threshold=rembg_params.get("fg_threshold", 240) if rembg_params else 240,
@@ -103,7 +137,7 @@ def process_single_frame(
         )
         mask = np.asarray(mask_image, dtype=np.float32) / 255.0
     else:
-        raise ValueError(f"Unsupported engine: {engine}")
+        raise ValueError(f"Unsupported engine: {_worker_engine}")
     
     # Постобработка маски
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
@@ -425,6 +459,7 @@ def build_alpha_clip_optimized(
     
     # Обработка кадров параллельно
     logger.info(f"[PREPARE_OVERLAY] ▶️ Processing frames with {num_workers} workers")
+    logger.info(f"[PREPARE_OVERLAY] 📊 Initializing {engine} session in each worker process...")
     process_start = time.time()
     
     processed_frames = [None] * actual_frame_count
@@ -432,13 +467,17 @@ def build_alpha_clip_optimized(
     last_logged_percent = 0
     completed = 0
     
-    with ProcessPoolExecutor(max_workers=num_workers) as executor:
+    # Использовать initializer для предзагрузки модели в каждом worker процессе
+    with ProcessPoolExecutor(
+        max_workers=num_workers,
+        initializer=_init_worker,
+        initargs=(engine, rembg_model)
+    ) as executor:
         # Отправить все кадры на обработку
         future_to_index = {
             executor.submit(
                 process_single_frame,
                 frames[i],
-                engine,
                 threshold,
                 feather,
                 shape,

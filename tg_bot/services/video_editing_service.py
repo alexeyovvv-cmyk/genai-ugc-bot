@@ -154,6 +154,9 @@ async def add_subtitles_to_video(
             env["SHOTSTACK_POLL_SECONDS"] = "3"  # чаще проверять статус рендера
             env["U2NET_HOME"] = "/tmp/.u2net"  # кэш rembg моделей
             env["OVERLAY_USE_OPTIMIZED"] = os.getenv("OVERLAY_USE_OPTIMIZED", "true")  # использовать оптимизированную версию prepare_overlay
+            # Подавить прогресс-бары и verbose логи в subprocess
+            env["POOCH_VERBOSITY"] = "ERROR"  # подавить загрузки rembg
+            env["TQDM_DISABLE"] = "1"  # подавить tqdm прогресс-бары
             
             subprocess_start = time.time()
             result = subprocess.run(
@@ -329,6 +332,9 @@ async def composite_head_with_background(
             env["SHOTSTACK_POLL_SECONDS"] = "3"  # чаще проверять статус рендера
             env["U2NET_HOME"] = "/tmp/.u2net"  # кэш rembg моделей
             env["OVERLAY_USE_OPTIMIZED"] = os.getenv("OVERLAY_USE_OPTIMIZED", "true")  # использовать оптимизированную версию prepare_overlay
+            # Подавить прогресс-бары и verbose логи в subprocess
+            env["POOCH_VERBOSITY"] = "ERROR"  # подавить загрузки rembg
+            env["TQDM_DISABLE"] = "1"  # подавить tqdm прогресс-бары
             
             subprocess_start = time.time()
             result = subprocess.run(
