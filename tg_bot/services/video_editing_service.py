@@ -17,6 +17,7 @@ from typing import Dict, Optional
 import requests
 
 from .r2_service import upload_file, get_presigned_url
+from ..utils.timing import log_timing, format_size
 
 logger = logging.getLogger(__name__)
 
@@ -59,18 +60,25 @@ def download_video_from_url(url: str, local_path: str) -> bool:
         bool: успешность скачивания
     """
     try:
-        logger.info(f"Downloading video from {url}")
+        start_time = time.time()
+        logger.info(f"[MONTAGE] ▶️ Downloading video from Shotstack")
+        
         response = requests.get(url, stream=True, timeout=300)
         response.raise_for_status()
         
+        downloaded_bytes = 0
         with open(local_path, 'wb') as f:
             for chunk in response.iter_content(chunk_size=8192):
                 f.write(chunk)
+                downloaded_bytes += len(chunk)
         
-        logger.info(f"Video downloaded successfully to {local_path}")
+        duration = time.time() - start_time
+        logger.info(f"[MONTAGE] ⏱️ Downloaded {format_size(downloaded_bytes)} in {duration:.2f}s")
+        logger.info(f"[MONTAGE] 📊 Download speed: {format_size(int(downloaded_bytes / duration))}/s")
+        
         return True
     except Exception as e:
-        logger.error(f"Failed to download video: {e}")
+        logger.error(f"[MONTAGE] ❌ Failed to download video: {e}")
         return False
 
 
@@ -95,13 +103,20 @@ async def add_subtitles_to_video(
     Raises:
         VideoEditingError: при ошибке монтажа
     """
+    overall_start = time.time()
+    
     try:
-        logger.info(f"Starting subtitle overlay for user {user_id}, video {video_r2_key}")
+        logger.info(f"[MONTAGE] ▶️ Starting add_subtitles_to_video for user {user_id}")
+        logger.info(f"[MONTAGE] 📊 Video: {video_r2_key}")
+        logger.info(f"[MONTAGE] 📊 Transcript length: {len(text)} chars")
         
         # 1. Получить presigned URL для исходного видео
+        start_time = time.time()
+        logger.info(f"[MONTAGE] ▶️ Getting presigned URL from R2")
         head_url = get_presigned_url(video_r2_key, expiry_hours=1)
         if not head_url:
             raise VideoEditingError(f"Failed to get presigned URL for {video_r2_key}")
+        logger.info(f"[MONTAGE] ⏱️ Got presigned URL in {time.time() - start_time:.2f}s")
         
         # 2. Проверить наличие Shotstack credentials
         api_key = os.getenv("SHOTSTACK_API_KEY")
@@ -128,7 +143,8 @@ async def add_subtitles_to_video(
                 "--rembg-model", "u2net_human_seg",  # быстрая модель для людей
             ]
             
-            logger.info(f"Running autopipeline: {' '.join(cmd)}")
+            logger.info(f"[MONTAGE] ▶️ Running autopipeline subprocess")
+            logger.info(f"[MONTAGE] 📊 Command: {' '.join(cmd[:6])}...")  # первые 6 аргументов
             
             # Установить переменные окружения
             env = os.environ.copy()
@@ -138,6 +154,7 @@ async def add_subtitles_to_video(
             env["SHOTSTACK_POLL_SECONDS"] = "3"  # чаще проверять статус рендера
             env["U2NET_HOME"] = "/tmp/.u2net"  # кэш rembg моделей
             
+            subprocess_start = time.time()
             result = subprocess.run(
                 cmd,
                 capture_output=True,
@@ -145,6 +162,8 @@ async def add_subtitles_to_video(
                 env=env,
                 cwd=str(VIDEO_EDITING_DIR)
             )
+            subprocess_duration = time.time() - subprocess_start
+            logger.info(f"[MONTAGE] ⏱️ Autopipeline subprocess completed in {subprocess_duration:.2f}s")
             
             if result.returncode != 0:
                 logger.error(f"Autopipeline failed with code {result.returncode}")
@@ -174,17 +193,33 @@ async def add_subtitles_to_video(
             logger.info(f"Downloaded video to: {result_file}")
             
             # 5. Загрузить результат в R2
+            start_time = time.time()
+            logger.info(f"[MONTAGE] ▶️ Uploading result to R2")
+            
             timestamp = int(time.time())
             result_r2_key = f"users/{user_id}/edited_videos/subtitled_{timestamp}.mp4"
+            
+            file_size = result_file.stat().st_size
+            logger.info(f"[MONTAGE] 📊 Result file size: {format_size(file_size)}")
             
             upload_success = upload_file(str(result_file), result_r2_key)
             if not upload_success:
                 raise VideoEditingError("Failed to upload result to R2")
             
+            upload_duration = time.time() - start_time
+            logger.info(f"[MONTAGE] ⏱️ Uploaded to R2 in {upload_duration:.2f}s")
+            logger.info(f"[MONTAGE] 📊 Upload speed: {format_size(int(file_size / upload_duration))}/s")
+            
             # 6. Получить presigned URL для результата
             result_url = get_presigned_url(result_r2_key, expiry_hours=24)  # 24 часа
             
-            logger.info(f"Successfully created subtitled video: {result_r2_key}")
+            overall_duration = time.time() - overall_start
+            logger.info(f"[MONTAGE] ✅ Successfully created subtitled video: {result_r2_key}")
+            
+            # Итоговая статистика
+            minutes = int(overall_duration // 60)
+            seconds = overall_duration % 60
+            logger.info(f"[MONTAGE] ⏱️ Total add_subtitles_to_video: {overall_duration:.2f}s ({minutes}m {seconds:.1f}s)")
             
             return {
                 "r2_key": result_r2_key,
@@ -222,15 +257,25 @@ async def composite_head_with_background(
     Raises:
         VideoEditingError: при ошибке монтажа
     """
+    overall_start = time.time()
+    
     try:
-        logger.info(f"Starting composite for user {user_id}, head={head_r2_key}, bg={background_r2_key}")
+        logger.info(f"[MONTAGE] ▶️ Starting composite_head_with_background for user {user_id}")
+        logger.info(f"[MONTAGE] 📊 Head video: {head_r2_key}")
+        logger.info(f"[MONTAGE] 📊 Background video: {background_r2_key}")
+        logger.info(f"[MONTAGE] 📊 Transcript length: {len(text)} chars")
         
         # 1. Получить presigned URLs
+        start_time = time.time()
+        logger.info(f"[MONTAGE] ▶️ Getting presigned URLs from R2")
+        
         head_url = get_presigned_url(head_r2_key, expiry_hours=1)
         bg_url = get_presigned_url(background_r2_key, expiry_hours=1)
         
         if not head_url or not bg_url:
             raise VideoEditingError("Failed to get presigned URLs")
+        
+        logger.info(f"[MONTAGE] ⏱️ Got presigned URLs in {time.time() - start_time:.2f}s")
         
         # 2. Проверить Shotstack credentials
         api_key = os.getenv("SHOTSTACK_API_KEY")
@@ -256,7 +301,9 @@ async def composite_head_with_background(
                 "--rembg-model", "u2net_human_seg",  # быстрая модель для людей
             ]
             
-            logger.info(f"Running autopipeline: {' '.join(cmd)}")
+            logger.info(f"[MONTAGE] ▶️ Running autopipeline subprocess (composite with background)")
+            logger.info(f"[MONTAGE] 📊 Template: mix_basic_circle")
+            logger.info(f"[MONTAGE] 📊 Command: {' '.join(cmd[:6])}...")
             
             env = os.environ.copy()
             env["SHOTSTACK_API_KEY"] = api_key
@@ -265,6 +312,7 @@ async def composite_head_with_background(
             env["SHOTSTACK_POLL_SECONDS"] = "3"  # чаще проверять статус рендера
             env["U2NET_HOME"] = "/tmp/.u2net"  # кэш rembg моделей
             
+            subprocess_start = time.time()
             result = subprocess.run(
                 cmd,
                 capture_output=True,
@@ -272,6 +320,8 @@ async def composite_head_with_background(
                 env=env,
                 cwd=str(VIDEO_EDITING_DIR)
             )
+            subprocess_duration = time.time() - subprocess_start
+            logger.info(f"[MONTAGE] ⏱️ Autopipeline subprocess completed in {subprocess_duration:.2f}s")
             
             if result.returncode != 0:
                 logger.error(f"Autopipeline failed with code {result.returncode}")
@@ -301,17 +351,33 @@ async def composite_head_with_background(
             logger.info(f"Downloaded video to: {result_file}")
             
             # 5. Загрузить результат в R2
+            start_time = time.time()
+            logger.info(f"[MONTAGE] ▶️ Uploading result to R2")
+            
             timestamp = int(time.time())
             result_r2_key = f"users/{user_id}/edited_videos/composite_{timestamp}.mp4"
+            
+            file_size = result_file.stat().st_size
+            logger.info(f"[MONTAGE] 📊 Result file size: {format_size(file_size)}")
             
             upload_success = upload_file(str(result_file), result_r2_key)
             if not upload_success:
                 raise VideoEditingError("Failed to upload result to R2")
             
+            upload_duration = time.time() - start_time
+            logger.info(f"[MONTAGE] ⏱️ Uploaded to R2 in {upload_duration:.2f}s")
+            logger.info(f"[MONTAGE] 📊 Upload speed: {format_size(int(file_size / upload_duration))}/s")
+            
             # 6. Получить presigned URL
             result_url = get_presigned_url(result_r2_key, expiry_hours=24)
             
-            logger.info(f"Successfully created composite video: {result_r2_key}")
+            overall_duration = time.time() - overall_start
+            logger.info(f"[MONTAGE] ✅ Successfully created composite video: {result_r2_key}")
+            
+            # Итоговая статистика
+            minutes = int(overall_duration // 60)
+            seconds = overall_duration % 60
+            logger.info(f"[MONTAGE] ⏱️ Total composite_head_with_background: {overall_duration:.2f}s ({minutes}m {seconds:.1f}s)")
             
             return {
                 "r2_key": result_r2_key,

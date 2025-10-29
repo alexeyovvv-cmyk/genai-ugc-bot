@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import math
 import os
 import subprocess
@@ -27,6 +28,14 @@ import re
 
 import assemble
 import prepare_overlay
+
+# Настройка логгера
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    datefmt='%H:%M:%S'
+)
+logger = logging.getLogger(__name__)
 
 TARGET_ASPECT = 9 / 16
 DEFAULT_FIT_TOLERANCE = 0.02
@@ -638,8 +647,16 @@ def generate_overlay_urls(
 
 
 def download_to_temp(url: str, dest: Path) -> None:
-    print(f"Скачиваем {url}...")
+    start_time = time.time()
+    logger.info(f"[AUTOPIPELINE] ▶️ Downloading from URL")
     prepare_overlay.download_file(url, dest)
+    
+    file_size = dest.stat().st_size
+    duration = time.time() - start_time
+    size_mb = file_size / (1024 * 1024)
+    
+    logger.info(f"[AUTOPIPELINE] ⏱️ Downloaded {size_mb:.1f}MB in {duration:.2f}s")
+    logger.info(f"[AUTOPIPELINE] 📊 Download speed: {size_mb / duration:.1f}MB/s")
 
 
 def build_output_dir(explicit: Optional[str]) -> Path:
@@ -656,21 +673,33 @@ def build_output_dir(explicit: Optional[str]) -> Path:
 def render_specs(spec_paths: Iterable[Path]) -> Dict[str, Dict[str, object]]:
     results: Dict[str, Dict[str, object]] = {}
     for spec_path in spec_paths:
-        print(f"Запускаем render для {spec_path.name}...")
+        start_time = time.time()
+        logger.info(f"[AUTOPIPELINE] ▶️ Rendering spec: {spec_path.name}")
+        
         result = assemble.render_from_spec(str(spec_path))
+        
+        duration = time.time() - start_time
+        logger.info(f"[AUTOPIPELINE] ⏱️ Render completed in {duration:.2f}s")
+        logger.info(f"[AUTOPIPELINE] 📊 Result URL: {result.get('url')}")
+        
         results[spec_path.name] = result
-        print(f"Готово: {result.get('url')}")
     return results
 
 
 def main() -> None:
+    overall_start = time.time()
+    logger.info(f"[AUTOPIPELINE] ▶️ Starting autopipeline")
+    
     args = parse_args()
 
     templates = validate_templates(args.templates.split(","))
+    logger.info(f"[AUTOPIPELINE] 📊 Templates to render: {', '.join(templates)}")
+    
     api_key = os.getenv("SHOTSTACK_API_KEY")
     if not api_key:
         raise PipelineError("Не найден SHOTSTACK_API_KEY в окружении.")
     stage = os.getenv("SHOTSTACK_STAGE", assemble.DEFAULT_STAGE)
+    logger.info(f"[AUTOPIPELINE] 📊 Shotstack stage: {stage}")
 
     required_shapes: set[str] = set()
     for template in templates:
@@ -678,9 +707,22 @@ def main() -> None:
         overlay_nodes = config.get("overlay_nodes", {})
         if isinstance(overlay_nodes, dict):
             required_shapes.update(overlay_nodes.keys())
+    
+    if required_shapes:
+        logger.info(f"[AUTOPIPELINE] 📊 Required overlay shapes: {', '.join(required_shapes)}")
+    else:
+        logger.info(f"[AUTOPIPELINE] 📊 No overlays required")
 
     transcript_text = read_transcript(args)
+    if transcript_text:
+        logger.info(f"[AUTOPIPELINE] 📊 Transcript provided: {len(transcript_text)} chars")
 
+    start_time = time.time()
+    if required_shapes:
+        logger.info(f"[AUTOPIPELINE] ▶️ Generating overlays")
+        logger.info(f"[AUTOPIPELINE] 📊 Overlay engine: {args.overlay_engine}")
+        logger.info(f"[AUTOPIPELINE] 📊 Container: {args.overlay_container}")
+    
     overlay_urls = generate_overlay_urls(
         head_url=args.head_url,
         shapes=required_shapes,
@@ -694,6 +736,15 @@ def main() -> None:
         circle_center_x=args.circle_center_x,
         circle_center_y=args.circle_center_y,
     )
+    
+    if required_shapes:
+        overlay_duration = time.time() - start_time
+        if overlay_duration > 60:
+            minutes = int(overlay_duration // 60)
+            seconds = overlay_duration % 60
+            logger.info(f"[AUTOPIPELINE] ⏱️ Overlays generated in {overlay_duration:.2f}s ({minutes}m {seconds:.1f}s) ⚠️")
+        else:
+            logger.info(f"[AUTOPIPELINE] ⏱️ Overlays generated in {overlay_duration:.2f}s")
 
     subtitles_from_file: Optional[List[Dict[str, object]]] = None
     if args.subtitles:
@@ -733,25 +784,46 @@ def main() -> None:
 
     with tempfile.TemporaryDirectory() as tmpdir_str:
         tmpdir = Path(tmpdir_str)
+        
+        # Скачивание фона
+        logger.info(f"[AUTOPIPELINE] ▶️ Processing background video")
         bg_path = tmpdir / "background_source"
         download_to_temp(args.background_url, bg_path)
+        
+        start_time = time.time()
         width, height, duration = run_ffprobe_meta(bg_path)
+        logger.info(f"[AUTOPIPELINE] ⏱️ ffprobe analyzed in {time.time() - start_time:.2f}s")
+        logger.info(f"[AUTOPIPELINE] 📊 Background: {width}x{height} ({width/height:.3f}), {duration:.2f}s")
+        
         fit_mode = decide_fit(width, height, args.fit_tolerance)
-        print(f"Аспект фона {width}x{height} ({width/height:.3f}), длительность {duration:.2f}s. Выбран fit={fit_mode}.")
+        logger.info(f"[AUTOPIPELINE] 📊 Fit mode: {fit_mode}")
         if fit_mode == "contain":
-            print("Используем подложку и fit=contain, искажений не будет.")
+            logger.info(f"[AUTOPIPELINE] 📊 Using letterbox/pillarbox (no distortion)")
 
+        # Скачивание головы
+        logger.info(f"[AUTOPIPELINE] ▶️ Processing head video")
         head_path = tmpdir / "head_source"
         download_to_temp(args.head_url, head_path)
+        
+        start_time = time.time()
         _, _, head_duration = run_ffprobe_meta(head_path)
+        logger.info(f"[AUTOPIPELINE] ⏱️ ffprobe analyzed in {time.time() - start_time:.2f}s")
+        logger.info(f"[AUTOPIPELINE] 📊 Head duration: {head_duration:.2f}s")
 
         if transcript_text:
+            logger.info(f"[AUTOPIPELINE] ▶️ Detecting speech segments")
+            start_time = time.time()
             segments = detect_speech_segments(head_path, head_duration)
+            logger.info(f"[AUTOPIPELINE] ⏱️ Speech detection in {time.time() - start_time:.2f}s")
+            logger.info(f"[AUTOPIPELINE] 📊 Found {len(segments)} speech segments")
+            
+            logger.info(f"[AUTOPIPELINE] ▶️ Aligning transcript to segments")
+            start_time = time.time()
             auto_subtitles = align_transcript_to_segments(transcript_text, segments, head_duration)
-            print(f"Автоматически создано субтитров: {len(auto_subtitles)}")
+            logger.info(f"[AUTOPIPELINE] ⏱️ Aligned {len(auto_subtitles)} subtitles in {time.time() - start_time:.2f}s")
 
     output_dir = build_output_dir(args.output_dir)
-    print(f"Спецификации будут сохранены в {output_dir}")
+    logger.info(f"[AUTOPIPELINE] 📊 Output directory: {output_dir}")
 
     written_specs: List[Path] = []
     summary: Dict[str, Dict[str, object]] = {}
@@ -810,22 +882,34 @@ def main() -> None:
         written_specs.append(spec_path)
 
     if args.no_render:
-        print("Рендер отключён (--no-render). Спецификации готовы.")
+        logger.info(f"[AUTOPIPELINE] ⏱️ Specs prepared (--no-render), skipping render")
         return
 
+    logger.info(f"[AUTOPIPELINE] ▶️ Starting renders")
     try:
+        render_start = time.time()
         summary = render_specs(written_specs)
+        render_duration = time.time() - render_start
+        logger.info(f"[AUTOPIPELINE] ⏱️ All renders completed in {render_duration:.2f}s")
     except assemble.ShotstackError as exc:
         raise PipelineError(f"Render завершился с ошибкой: {exc}") from exc
 
-    print("\nРезультаты:")
+    logger.info(f"[AUTOPIPELINE] ✅ Results:")
     for name, result in summary.items():
-        print(f"- {name}: {result.get('url')}")
+        logger.info(f"[AUTOPIPELINE] - {name}: {result.get('url')}")
+    
+    overall_duration = time.time() - overall_start
+    minutes = int(overall_duration // 60)
+    seconds = overall_duration % 60
+    logger.info(f"[AUTOPIPELINE] ⏱️ Total autopipeline execution: {overall_duration:.2f}s ({minutes}m {seconds:.1f}s)")
 
 
 if __name__ == "__main__":
     try:
         main()
     except PipelineError as exc:
-        print(f"Ошибка: {exc}", file=sys.stderr)
+        logger.error(f"[AUTOPIPELINE] ❌ Pipeline error: {exc}")
+        raise SystemExit(1) from exc
+    except Exception as exc:
+        logger.error(f"[AUTOPIPELINE] ❌ Unexpected error: {exc}", exc_info=True)
         raise SystemExit(1) from exc

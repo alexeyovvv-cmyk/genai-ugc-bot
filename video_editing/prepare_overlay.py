@@ -25,6 +25,7 @@ The script will:
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import subprocess
 import sys
@@ -46,6 +47,14 @@ except ImportError:  # pragma: no cover - optional dependency for rembg engine
     new_session = None  # type: ignore
     remove = None  # type: ignore
 
+# Настройка логгера
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    datefmt='%H:%M:%S'
+)
+logger = logging.getLogger(__name__)
+
 
 def run_ffmpeg(args: list[str]) -> None:
     result = subprocess.run(["ffmpeg", "-y", *args], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -54,11 +63,19 @@ def run_ffmpeg(args: list[str]) -> None:
 
 
 def download_file(url: str, dest: Path) -> None:
+    start_time = time.time()
+    downloaded_bytes = 0
+    
     with requests.get(url, stream=True, timeout=60) as response:
         response.raise_for_status()
         with open(dest, "wb") as handle:
             for chunk in response.iter_content(chunk_size=8192):
                 handle.write(chunk)
+                downloaded_bytes += len(chunk)
+    
+    duration = time.time() - start_time
+    size_mb = downloaded_bytes / (1024 * 1024)
+    logger.info(f"[PREPARE_OVERLAY] ⏱️ Downloaded {size_mb:.1f}MB in {duration:.2f}s")
 
 
 def build_alpha_clip(
@@ -101,7 +118,16 @@ def build_alpha_clip(
     if feather % 2 == 0 and feather != 0:
         feather += 1
 
+    # Подсчет общего количества кадров
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    logger.info(f"[PREPARE_OVERLAY] 📊 Processing {total_frames} frames with {engine}")
+    logger.info(f"[PREPARE_OVERLAY] 📊 Shape: {shape}, FPS: {fps:.1f}")
+    
     index = 0
+    last_progress_time = time.time()
+    last_logged_percent = 0
+    frame_start_time = time.time()
+    
     while True:
         success, frame = cap.read()
         if not success:
@@ -156,6 +182,20 @@ def build_alpha_clip(
         out_path = frames_dir / f"frame_{index:04d}.png"
         cv2.imwrite(str(out_path), foreground_bgra)
         index += 1
+        
+        # Логирование прогресса каждые 10%
+        if total_frames > 0:
+            progress_percent = int((index / total_frames) * 100)
+            # Логируем каждые 10% или раз в 5 секунд
+            current_time = time.time()
+            if (progress_percent >= last_logged_percent + 10 or 
+                current_time - last_progress_time >= 5):
+                elapsed = current_time - frame_start_time
+                fps_actual = index / elapsed if elapsed > 0 else 0
+                eta_seconds = (total_frames - index) / fps_actual if fps_actual > 0 else 0
+                logger.info(f"[PREPARE_OVERLAY] 📊 Progress: {progress_percent}% ({index}/{total_frames} frames, {fps_actual:.1f} fps, ETA: {eta_seconds:.0f}s)")
+                last_logged_percent = progress_percent
+                last_progress_time = current_time
 
     if segmentation is not None:
         segmentation.close()
@@ -163,11 +203,20 @@ def build_alpha_clip(
 
     if index == 0:
         raise RuntimeError("No frames extracted from source video.")
+    
+    frames_duration = time.time() - frame_start_time
+    logger.info(f"[PREPARE_OVERLAY] ⏱️ Processed {index} frames in {frames_duration:.2f}s ({index/frames_duration:.1f} fps)")
 
     # Extract audio using ffmpeg (copy codec if possible)
+    logger.info(f"[PREPARE_OVERLAY] ▶️ Extracting audio")
+    audio_start = time.time()
     run_ffmpeg(["-i", str(source_path), "-vn", "-acodec", "copy", str(audio_path)])
+    logger.info(f"[PREPARE_OVERLAY] ⏱️ Audio extracted in {time.time() - audio_start:.2f}s")
 
     frame_pattern = str(frames_dir / "frame_%04d.png")
+    logger.info(f"[PREPARE_OVERLAY] ▶️ Encoding alpha video ({container})")
+    encode_start = time.time()
+    
     if container == "webm":
         encode_args = [
             "-framerate",
@@ -212,23 +261,44 @@ def build_alpha_clip(
         ]
 
     run_ffmpeg(encode_args)
+    
+    encode_duration = time.time() - encode_start
+    logger.info(f"[PREPARE_OVERLAY] ⏱️ Video encoded in {encode_duration:.2f}s")
+    
+    output_size = alpha_video_path.stat().st_size
+    size_mb = output_size / (1024 * 1024)
+    logger.info(f"[PREPARE_OVERLAY] 📊 Output size: {size_mb:.1f}MB")
 
     duration = index / fps
     return duration
 
 
 def request_signed_upload(api_key: str, stage: str) -> Tuple[str, str]:
+    start_time = time.time()
+    logger.info(f"[PREPARE_OVERLAY] ▶️ Requesting Shotstack signed upload URL")
+    
     url = f"https://api.shotstack.io/ingest/{stage}/upload"
     response = requests.post(url, headers={"x-api-key": api_key}, timeout=30)
     response.raise_for_status()
     data = response.json()["data"]
+    
+    logger.info(f"[PREPARE_OVERLAY] ⏱️ Got signed URL in {time.time() - start_time:.2f}s")
     return data["id"], data["attributes"]["url"]
 
 
 def upload_to_signed_url(file_path: Path, signed_url: str) -> None:
+    start_time = time.time()
+    file_size = file_path.stat().st_size
+    size_mb = file_size / (1024 * 1024)
+    
+    logger.info(f"[PREPARE_OVERLAY] ▶️ Uploading {size_mb:.1f}MB to Shotstack")
+    
     with open(file_path, "rb") as handle:
         resp = requests.put(signed_url, data=handle, timeout=300)
     resp.raise_for_status()
+    
+    duration = time.time() - start_time
+    logger.info(f"[PREPARE_OVERLAY] ⏱️ Uploaded in {duration:.2f}s ({size_mb/duration:.1f}MB/s)")
 
 
 def derive_public_url(signed_url: str, extension: str) -> Tuple[str, str]:
@@ -242,16 +312,27 @@ def derive_public_url(signed_url: str, extension: str) -> Tuple[str, str]:
 
 
 def wait_for_asset(url: str, timeout: int = 300, delay: float = 5.0) -> None:
+    logger.info(f"[PREPARE_OVERLAY] ▶️ Waiting for Shotstack to process asset")
+    start_time = time.time()
     elapsed = 0.0
+    check_count = 0
+    
     while elapsed < timeout:
         try:
             response = requests.head(url, timeout=10)
             if response.status_code == 200:
+                logger.info(f"[PREPARE_OVERLAY] ⏱️ Asset ready in {elapsed:.2f}s (after {check_count} checks)")
                 return
         except requests.RequestException:
             pass
         time.sleep(delay)
         elapsed += delay
+        check_count += 1
+        
+        # Логируем каждые 30 секунд
+        if int(elapsed) % 30 == 0 and elapsed > 0:
+            logger.info(f"[PREPARE_OVERLAY] 📊 Still waiting... ({elapsed:.0f}s elapsed)")
+    
     raise TimeoutError(f"Asset was not accessible within {timeout} seconds: {url}")
 
 
@@ -276,6 +357,10 @@ def prepare_overlay(
     circle_center_x: float,
     circle_center_y: float,
 ) -> str:
+    overall_start = time.time()
+    logger.info(f"[PREPARE_OVERLAY] ▶️ Starting overlay preparation")
+    logger.info(f"[PREPARE_OVERLAY] 📊 Engine: {engine}, Shape: {shape}, Container: {container}")
+    
     with tempfile.TemporaryDirectory() as tmpdir_str:
         tmpdir = Path(tmpdir_str)
         source_path = tmpdir / "input.mp4"
@@ -283,10 +368,13 @@ def prepare_overlay(
         frames_dir.mkdir()
         audio_path = tmpdir / "audio.m4a"
 
-        print("Downloading source clip...")
+        logger.info(f"[PREPARE_OVERLAY] ▶️ Downloading source clip")
+        download_start = time.time()
         download_file(input_url, source_path)
+        logger.info(f"[PREPARE_OVERLAY] ⏱️ Download completed in {time.time() - download_start:.2f}s")
 
-        print(f"Building alpha-matted clip using {engine}...")
+        logger.info(f"[PREPARE_OVERLAY] ▶️ Building alpha-matted clip")
+        alpha_start = time.time()
         duration = build_alpha_clip(
             source_path,
             frames_dir,
@@ -308,22 +396,31 @@ def prepare_overlay(
             circle_center_x,
             circle_center_y,
         )
+        alpha_duration = time.time() - alpha_start
+        logger.info(f"[PREPARE_OVERLAY] ⏱️ Alpha clip built in {alpha_duration:.2f}s")
+        
         extension = output_path.suffix or (".webm" if container == "webm" else ".mov")
 
-        print("Requesting Shotstack signed upload URL...")
         upload_id, signed_url = request_signed_upload(api_key, stage)
-        print(f"Upload ID: {upload_id}")
+        logger.info(f"[PREPARE_OVERLAY] 📊 Upload ID: {upload_id}")
 
-        print("Uploading alpha clip to Shotstack ingest...")
         upload_to_signed_url(output_path, signed_url)
 
-        print("Deriving public asset URL...")
+        logger.info(f"[PREPARE_OVERLAY] ▶️ Deriving public asset URL")
         _, public_url = derive_public_url(signed_url, extension)
 
-        print("Waiting for Shotstack to process the uploaded asset...")
         wait_for_asset(public_url)
 
-        print(f"Overlay ready at {public_url} (duration {duration:.2f}s)")
+        overall_duration = time.time() - overall_start
+        minutes = int(overall_duration // 60)
+        seconds = overall_duration % 60
+        
+        if overall_duration > 60:
+            logger.info(f"[PREPARE_OVERLAY] ⏱️ Total overlay generation: {overall_duration:.2f}s ({minutes}m {seconds:.1f}s) ⚠️")
+        else:
+            logger.info(f"[PREPARE_OVERLAY] ⏱️ Total overlay generation: {overall_duration:.2f}s")
+        
+        logger.info(f"[PREPARE_OVERLAY] ✅ Overlay ready at {public_url} (duration {duration:.2f}s)")
         return public_url
 
 

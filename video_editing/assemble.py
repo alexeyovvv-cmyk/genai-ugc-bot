@@ -9,12 +9,21 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import subprocess
 import time
 from html import escape
 from typing import Any, Dict, List, Optional
 from urllib import error, request
+
+# Настройка логгера
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    datefmt='%H:%M:%S'
+)
+logger = logging.getLogger(__name__)
 
 
 DEFAULT_STAGE = os.getenv("SHOTSTACK_STAGE", "stage")
@@ -80,10 +89,13 @@ def _collect_clips(spec: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 
 def apply_automation(spec: Dict[str, Any]) -> None:
+    start_time = time.time()
     clips = _collect_clips(spec)
     if not clips:
         return
 
+    logger.info(f"[ASSEMBLE] ▶️ Applying automation to {len(clips)} clips")
+    
     duration_cache: Dict[str, float] = {}
     label_index: Dict[str, Dict[str, Any]] = {}
 
@@ -146,6 +158,9 @@ def apply_automation(spec: Dict[str, Any]) -> None:
 
     for clip in clips:
         clip.pop("_source_duration", None)
+    
+    duration = time.time() - start_time
+    logger.info(f"[ASSEMBLE] ⏱️ Automation applied in {duration:.2f}s")
 
 
 def build_video_clip(clip: Dict[str, Any]) -> Dict[str, Any]:
@@ -352,10 +367,17 @@ def api_request(method: str, url: str, api_key: str, body: Optional[Dict[str, An
 
 
 def submit_render(payload: Dict[str, Any], api_key: str, host: str, stage: str) -> str:
+    start_time = time.time()
+    logger.info(f"[ASSEMBLE] ▶️ Submitting render to Shotstack")
+    
     url = f"{host.rstrip('/')}/{stage}/render"
     response = api_request("POST", url, api_key, payload)
+    
     try:
-        return response["response"]["id"]
+        render_id = response["response"]["id"]
+        duration = time.time() - start_time
+        logger.info(f"[ASSEMBLE] ⏱️ Submitted in {duration:.2f}s, render_id: {render_id}")
+        return render_id
     except KeyError as exc:
         raise ShotstackError(f"Unexpected Shotstack response: {response}") from exc
 
@@ -363,12 +385,27 @@ def submit_render(payload: Dict[str, Any], api_key: str, host: str, stage: str) 
 def poll_render(render_id: str, api_key: str, host: str, stage: str, wait: bool = True) -> Dict[str, Any]:
     url = f"{host.rstrip('/')}/{stage}/render/{render_id}"
     started = time.time()
+    logger.info(f"[ASSEMBLE] ▶️ Polling render status")
+    
+    last_status = None
+    check_count = 0
 
     while True:
         response = api_request("GET", url, api_key)
         status = response.get("response", {}).get("status")
+        check_count += 1
+
+        # Логируем изменение статуса или каждые 20 секунд
+        elapsed = time.time() - started
+        if status != last_status or (int(elapsed) % 20 == 0 and elapsed > 0):
+            logger.info(f"[ASSEMBLE] 📊 Status: {status} ({elapsed:.0f}s elapsed, check #{check_count})")
+            last_status = status
 
         if status in {"done", "failed", "cancelled"} or not wait:
+            if status == "done":
+                render_time = response.get("response", {}).get("renderTime")
+                if render_time:
+                    logger.info(f"[ASSEMBLE] 📊 Shotstack render time: {render_time}s")
             return response
 
         if time.time() - started > POLL_TIMEOUT:
@@ -382,7 +419,8 @@ def extract_result(poll_response: Dict[str, Any]) -> Dict[str, Any]:
     status = response.get("status")
     if status != "done":
         raise ShotstackError(f"Render did not complete successfully: {status}")
-    return {
+    
+    result = {
         "status": status,
         "id": response.get("id"),
         "url": response.get("url"),
@@ -392,9 +430,18 @@ def extract_result(poll_response: Dict[str, Any]) -> Dict[str, Any]:
         "render_time": response.get("renderTime"),
         "billable_seconds": response.get("billable"),
     }
+    
+    logger.info(f"[ASSEMBLE] 📊 Video duration: {result.get('duration')}s")
+    logger.info(f"[ASSEMBLE] 📊 Billable seconds: {result.get('billable_seconds')}")
+    logger.info(f"[ASSEMBLE] ✅ Render URL: {result.get('url')}")
+    
+    return result
 
 
 def render_from_spec(path: str, wait: bool = True) -> Dict[str, Any]:
+    overall_start = time.time()
+    logger.info(f"[ASSEMBLE] ▶️ Starting render from spec: {path}")
+    
     api_key = os.getenv("SHOTSTACK_API_KEY")
     if not api_key:
         raise ShotstackError("Environment variable SHOTSTACK_API_KEY must be set.")
@@ -407,9 +454,20 @@ def render_from_spec(path: str, wait: bool = True) -> Dict[str, Any]:
     payload = build_render_payload(spec)
     render_id = submit_render(payload, api_key, host, stage)
 
+    poll_start = time.time()
     poll_response = poll_render(render_id, api_key, host, stage, wait=wait)
+    
     if wait:
-        return extract_result(poll_response)
+        poll_duration = time.time() - poll_start
+        logger.info(f"[ASSEMBLE] ⏱️ Polling completed in {poll_duration:.2f}s")
+        
+        result = extract_result(poll_response)
+        
+        overall_duration = time.time() - overall_start
+        logger.info(f"[ASSEMBLE] ⏱️ Total render_from_spec: {overall_duration:.2f}s")
+        
+        return result
+    
     return {
         "status": poll_response.get("response", {}).get("status"),
         "id": render_id,
@@ -436,7 +494,10 @@ def main() -> None:
     try:
         result = render_from_spec(args.spec, wait=not args.no_wait)
     except ShotstackError as exc:
-        print(f"Error: {exc}")
+        logger.error(f"[ASSEMBLE] ❌ Shotstack error: {exc}")
+        raise SystemExit(1) from exc
+    except Exception as exc:
+        logger.error(f"[ASSEMBLE] ❌ Unexpected error: {exc}", exc_info=True)
         raise SystemExit(1) from exc
 
     print(json.dumps(result, indent=2))
