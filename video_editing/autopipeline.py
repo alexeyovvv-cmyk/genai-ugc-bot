@@ -620,7 +620,7 @@ def generate_overlay_urls(
         for shape in shapes:
             output_name = f"overlay_{shape}.{'mov' if container == 'mov' else 'webm'}"
             output_path = tmpdir / output_name
-            print(f"Готовим оверлей {shape}...")
+            logger.info(f"[AUTOPIPELINE] ▶️ Preparing {shape} overlay")
             overlay_url = prepare_overlay.prepare_overlay(
                 head_url,
                 output_path,
@@ -897,6 +897,8 @@ def main() -> None:
     logger.info(f"[AUTOPIPELINE] ✅ Results:")
     for name, result in summary.items():
         logger.info(f"[AUTOPIPELINE] - {name}: {result.get('url')}")
+        # Также выводим в stdout для парсинга родительским процессом
+        print(f"- {name}: {result.get('url')}")
     
     overall_duration = time.time() - overall_start
     minutes = int(overall_duration // 60)

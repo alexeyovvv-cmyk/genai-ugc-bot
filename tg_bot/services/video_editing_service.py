@@ -153,6 +153,7 @@ async def add_subtitles_to_video(
             # Оптимизации скорости
             env["SHOTSTACK_POLL_SECONDS"] = "3"  # чаще проверять статус рендера
             env["U2NET_HOME"] = "/tmp/.u2net"  # кэш rembg моделей
+            env["OVERLAY_USE_OPTIMIZED"] = os.getenv("OVERLAY_USE_OPTIMIZED", "true")  # использовать оптимизированную версию prepare_overlay
             
             subprocess_start = time.time()
             result = subprocess.run(
@@ -184,18 +185,20 @@ async def add_subtitles_to_video(
             if result.stderr:
                 logger.info(f"[MONTAGE] STDERR output: {result.stderr}")
             
-            # 4. Извлечь URL видео из вывода
+            # 4. Извлечь URL видео из вывода (проверяем и stdout и stderr)
             video_url = extract_video_url_from_output(result.stdout)
+            if not video_url and result.stderr:
+                # Попробуем найти в stderr (где находятся логи)
+                video_url = extract_video_url_from_output(result.stderr)
+            
             if not video_url:
                 logger.error(f"[MONTAGE] ❌ Failed to extract video URL from autopipeline output")
-                logger.error(f"[MONTAGE] 📊 Full stdout ({len(result.stdout)} chars):")
-                # Логируем весь stdout построчно для диагностики
-                for i, line in enumerate(result.stdout.split('\n'), 1):
+                logger.error(f"[MONTAGE] 📊 Stdout ({len(result.stdout)} chars), Stderr ({len(result.stderr)} chars)")
+                logger.error(f"[MONTAGE] Last 10 lines of stderr:")
+                for line in result.stderr.split('\n')[-10:]:
                     if line.strip():
-                        logger.error(f"[MONTAGE]   Line {i}: {line}")
-                if result.stderr:
-                    logger.error(f"[MONTAGE] Full stderr: {result.stderr}")
-                raise VideoEditingError(f"Failed to extract video URL. Output was {len(result.stdout)} chars. Last 500: {result.stdout[-500:]}")
+                        logger.error(f"[MONTAGE]   {line}")
+                raise VideoEditingError(f"Failed to extract video URL from autopipeline output (checked {len(result.stdout) + len(result.stderr)} chars total)")
             
             logger.info(f"Extracted video URL: {video_url}")
             
@@ -325,6 +328,7 @@ async def composite_head_with_background(
             # Оптимизации скорости
             env["SHOTSTACK_POLL_SECONDS"] = "3"  # чаще проверять статус рендера
             env["U2NET_HOME"] = "/tmp/.u2net"  # кэш rembg моделей
+            env["OVERLAY_USE_OPTIMIZED"] = os.getenv("OVERLAY_USE_OPTIMIZED", "true")  # использовать оптимизированную версию prepare_overlay
             
             subprocess_start = time.time()
             result = subprocess.run(
@@ -356,18 +360,20 @@ async def composite_head_with_background(
             if result.stderr:
                 logger.info(f"[MONTAGE] STDERR output: {result.stderr}")
             
-            # 4. Извлечь URL видео из вывода
+            # 4. Извлечь URL видео из вывода (проверяем и stdout и stderr)
             video_url = extract_video_url_from_output(result.stdout)
+            if not video_url and result.stderr:
+                # Попробуем найти в stderr (где находятся логи)
+                video_url = extract_video_url_from_output(result.stderr)
+            
             if not video_url:
                 logger.error(f"[MONTAGE] ❌ Failed to extract video URL from autopipeline output")
-                logger.error(f"[MONTAGE] 📊 Full stdout ({len(result.stdout)} chars):")
-                # Логируем весь stdout построчно для диагностики
-                for i, line in enumerate(result.stdout.split('\n'), 1):
+                logger.error(f"[MONTAGE] 📊 Stdout ({len(result.stdout)} chars), Stderr ({len(result.stderr)} chars)")
+                logger.error(f"[MONTAGE] Last 10 lines of stderr:")
+                for line in result.stderr.split('\n')[-10:]:
                     if line.strip():
-                        logger.error(f"[MONTAGE]   Line {i}: {line}")
-                if result.stderr:
-                    logger.error(f"[MONTAGE] Full stderr: {result.stderr}")
-                raise VideoEditingError(f"Failed to extract video URL. Output was {len(result.stdout)} chars. Last 500: {result.stdout[-500:]}")
+                        logger.error(f"[MONTAGE]   {line}")
+                raise VideoEditingError(f"Failed to extract video URL from autopipeline output (checked {len(result.stdout) + len(result.stderr)} chars total)")
             
             logger.info(f"Extracted video URL: {video_url}")
             
