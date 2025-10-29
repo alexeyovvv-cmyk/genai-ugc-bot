@@ -24,8 +24,7 @@ from tg_bot.utils.user_state import (
     get_character_gender, get_character_age,
     get_original_character_path, get_edited_character_path,
     clear_edit_session,
-    set_original_video,
-    get_selected_character_idx
+    set_original_video
 )
 from tg_bot.utils.voice_mapping import get_voice_for_character, get_default_language, get_default_emotion
 from tg_bot.utils.files import get_character_image
@@ -354,7 +353,7 @@ async def character_text_received(m: Message, state: FSMContext):
             from tg_bot.keyboards import character_editing_choice_menu
             
             gender = get_character_gender(m.from_user.id)
-            character_idx = get_selected_character_idx(m.from_user.id)
+            character_idx = get_selected_character(m.from_user.id)
             
             # Отправляем сообщение о нарушении правил
             await m.answer(
