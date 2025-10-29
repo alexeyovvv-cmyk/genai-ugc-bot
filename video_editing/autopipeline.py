@@ -596,6 +596,92 @@ def update_nodes(
             clip["fit"] = fit_mode
 
 
+def generate_overlay_urls_modal(
+    modal_endpoint: str,
+    head_url: str,
+    shapes: Iterable[str],
+    *,
+    container: str,
+    engine: str,
+    rembg_model: str,
+    rembg_alpha_matting: bool,
+    circle_radius: float,
+    circle_center_x: float,
+    circle_center_y: float,
+) -> Dict[str, str]:
+    """
+    Generate overlay URLs using Modal GPU service.
+    
+    Args:
+        modal_endpoint: Modal service endpoint URL
+        head_url: URL of head video
+        shapes: List of shapes to generate (e.g., ["circle"])
+        container: "mov" or "webm"
+        engine: "mediapipe" or "rembg"
+        rembg_model: rembg model name
+        rembg_alpha_matting: enable alpha matting for rembg
+        circle_radius: circle mask radius
+        circle_center_x: circle center X
+        circle_center_y: circle center Y
+        
+    Returns:
+        Dict mapping shape to overlay URL
+    """
+    import sys
+    sys.path.insert(0, str(Path(__file__).parent.parent / "tg_bot"))
+    
+    from services.modal_client import ModalOverlayClient
+    
+    client = ModalOverlayClient(
+        base_url=modal_endpoint,
+        poll_interval=5,
+        timeout=600,
+    )
+    
+    urls: Dict[str, str] = {}
+    shapes_set = set(shapes)
+    
+    if not shapes_set:
+        return urls
+    
+    overlay_start = time.time()
+    
+    for shape in shapes_set:
+        logger.info(f"[AUTOPIPELINE] ▶️ Submitting {shape} overlay to Modal GPU")
+        
+        try:
+            overlay_url = client.process_overlay_async(
+                video_url=head_url,
+                container=container,
+                engine=engine,
+                rembg_model=rembg_model,
+                rembg_alpha_matting=rembg_alpha_matting,
+                shape=shape,
+                circle_radius=circle_radius,
+                circle_center_x=circle_center_x,
+                circle_center_y=circle_center_y,
+                # Additional prepare_overlay parameters
+                threshold=0.6,
+                feather=7,
+                rembg_fg_threshold=240,
+                rembg_bg_threshold=10,
+                rembg_erode_size=10,
+                rembg_base_size=1000,
+            )
+            
+            urls[shape] = overlay_url
+            logger.info(f"[AUTOPIPELINE] ✅ {shape} overlay ready")
+            
+        except Exception as exc:
+            logger.error(f"[AUTOPIPELINE] ❌ Modal GPU failed for {shape}: {exc}")
+            raise PipelineError(f"Modal GPU overlay generation failed: {exc}") from exc
+    
+    overlay_duration = time.time() - overlay_start
+    logger.info(f"[AUTOPIPELINE] ⏱️ Overlays generated via Modal GPU in {overlay_duration:.2f}s")
+    
+    return urls
+
+
 def generate_overlay_urls(
     head_url: str,
     shapes: Iterable[str],
@@ -610,6 +696,30 @@ def generate_overlay_urls(
     circle_center_x: float,
     circle_center_y: float,
 ) -> Dict[str, str]:
+    """
+    Generate overlay URLs - uses Modal GPU if available, otherwise local CPU.
+    """
+    # Check if Modal GPU service is configured
+    modal_endpoint = os.getenv("MODAL_OVERLAY_ENDPOINT")
+    
+    if modal_endpoint:
+        logger.info("[AUTOPIPELINE] 🚀 Using Modal GPU service for overlay generation")
+        return generate_overlay_urls_modal(
+            modal_endpoint,
+            head_url,
+            shapes,
+            container=container,
+            engine=engine,
+            rembg_model=rembg_model,
+            rembg_alpha_matting=rembg_alpha_matting,
+            circle_radius=circle_radius,
+            circle_center_x=circle_center_x,
+            circle_center_y=circle_center_y,
+        )
+    
+    # Fallback to local CPU processing
+    logger.info("[AUTOPIPELINE] 💻 Using local CPU for overlay generation")
+    
     urls: Dict[str, str] = {}
     shapes = set(shapes)
     if not shapes:
