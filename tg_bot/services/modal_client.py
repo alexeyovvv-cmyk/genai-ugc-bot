@@ -106,7 +106,7 @@ class ModalOverlayClient:
             response = requests.get(
                 self.status_url,
                 params={"job_id": job_id},
-                timeout=10,
+                timeout=60,
             )
             response.raise_for_status()
             return response.json()
@@ -129,7 +129,7 @@ class ModalOverlayClient:
             response = requests.get(
                 self.result_url,
                 params={"job_id": job_id},
-                timeout=10,
+                timeout=60,
             )
             response.raise_for_status()
             return response.json()

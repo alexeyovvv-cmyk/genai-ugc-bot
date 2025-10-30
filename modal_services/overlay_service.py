@@ -155,7 +155,7 @@ def process_overlay(
 
 # Web endpoint for job submission
 @app.function(image=image)
-@modal.web_endpoint(method="POST")
+@modal.fastapi_endpoint(method="POST")
 def submit(data: dict):
     """
     Submit overlay processing job.
@@ -184,7 +184,7 @@ def submit(data: dict):
 
 
 @app.function(image=image)
-@modal.web_endpoint(method="GET")
+@modal.fastapi_endpoint(method="GET")
 def status(job_id: str):
     """
     Check job status.
@@ -231,7 +231,7 @@ def status(job_id: str):
 
 
 @app.function(image=image)
-@modal.web_endpoint(method="GET")
+@modal.fastapi_endpoint(method="GET")
 def result(job_id: str):
     """
     Get job result.
