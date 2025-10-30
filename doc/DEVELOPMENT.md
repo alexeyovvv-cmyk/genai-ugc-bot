@@ -454,9 +454,72 @@ R2_SECRET_ACCESS_KEY=your_secret_key
 R2_BUCKET_NAME=your_bucket
 R2_ENDPOINT_URL=https://your-account.r2.cloudflarestorage.com
 
+# Видеомонтаж (Shotstack)
+SHOTSTACK_API_KEY=your_shotstack_key
+SHOTSTACK_STAGE=v1
+
+# Modal GPU (опционально, для ускорения монтажа)
+MODAL_OVERLAY_ENDPOINT=https://user--app-submit.modal.run
+
 # Админка
 ADMIN_FEEDBACK_CHAT_ID=your_admin_chat_id
 ```
+
+### Modal GPU деплой
+
+**Для ускорения видеомонтажа в 10-20 раз используется Modal GPU:**
+
+#### 1. Установка Modal CLI
+```bash
+pip install modal
+modal token new  # Авторизация
+```
+
+#### 2. Создание secrets в Modal
+```bash
+# Создать secret "shotstuck" с:
+# - SHOTSTACK_API_KEY
+# - SHOTSTACK_STAGE (опционально)
+```
+
+#### 3. Деплой Modal сервиса
+```bash
+cd /path/to/vibe_coding
+modal deploy modal_services/overlay_service.py
+```
+
+После деплоя получишь URL вида:
+```
+✓ Created web function submit => https://user--datanauts-overlay-submit.modal.run
+✓ Created web function status => https://user--datanauts-overlay-status.modal.run
+✓ Created web function result => https://user--datanauts-overlay-result.modal.run
+```
+
+#### 4. Добавить URL в Railway
+```bash
+# В Railway добавить env var:
+MODAL_OVERLAY_ENDPOINT=https://user--datanauts-overlay-submit.modal.run
+```
+
+#### 5. Проверка
+```bash
+# Тест Modal функции локально
+modal run modal_services/overlay_service.py::process_overlay \
+  --video-url "https://test-video" \
+  --engine mediapipe \
+  --shape circle
+
+# Тест через API
+curl -X POST https://user--datanauts-overlay-submit.modal.run \
+  -H "Content-Type: application/json" \
+  -d '{"video_url": "...", "container": "mov", "engine": "mediapipe", "shape": "circle"}'
+```
+
+#### Производительность:
+- **С Modal GPU (A10G)**: 30-60 секунд
+- **Без Modal (Railway CPU)**: 10+ минут
+- **Ускорение**: 10-20x
+- **Стоимость**: ~$0.06-0.12 за видео
 
 ## 🔍 Отладка
 
@@ -609,6 +672,14 @@ test: add unit tests
 
 ---
 
-**Версия руководства**: 2.0  
+**Версия руководства**: 2.1  
 **Статус**: Актуально  
-**Последнее обновление**: Декабрь 2024
+**Последнее обновление**: Октябрь 2025
+
+## 📝 Новое в v2.1
+
+- 🚀 **Modal GPU интеграция** - ускорение видеомонтажа в 10-20 раз
+- 📊 **Детальное логирование** - префиксы [MONTAGE], [AUTOPIPELINE], [OVERLAY], [MODAL]
+- 🎬 **video_editing_service.py** - видеомонтаж с Shotstack
+- ⚙️ **Гибридная архитектура** - Modal GPU + Railway CPU с автоматическим fallback
+- ⏱️ **timing.py утилита** - контекст-менеджер для измерения времени

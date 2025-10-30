@@ -8,7 +8,7 @@ VOICE_MAPPING = {
 }
 
 # Default TTS parameters (ready for future logic)
-DEFAULT_TTS_LANGUAGE = "auto"  # for future language selection
-DEFAULT_TTS_EMOTION = "neutral"  # for future emotion selection
+DEFAULT_TTS_LANGUAGE = "Russian"  # for future language selection
+DEFAULT_TTS_EMOTION = "happy"  # for future emotion selection
 
 

@@ -315,6 +315,7 @@ async def composite_head_with_background(
                 "--transcript", text,
                 "--output-dir", str(output_dir),
                 "--rembg-model", "u2net_human_seg",  # быстрая модель для людей
+                "--user-id", str(user_id),  # для кэширования overlay
             ]
             
             logger.info(f"[MONTAGE] ▶️ Running autopipeline subprocess (composite with background)")
@@ -374,6 +375,34 @@ async def composite_head_with_background(
                 raise VideoEditingError(f"Failed to extract video URL from autopipeline output (checked {len(result.stdout) + len(result.stderr)} chars total)")
             
             logger.info(f"Extracted video URL: {video_url}")
+            
+            # Cache overlay URLs for future iterations
+            # Extract overlay URLs from autopipeline stderr (they are logged there)
+            overlay_cache = {}
+            r2_cache = {}
+            
+            for line in result.stderr.split('\n'):
+                if '[AUTOPIPELINE] Generated overlay' in line:
+                    # Parse: "[AUTOPIPELINE] Generated overlay circle: https://..."
+                    try:
+                        parts = line.split('Generated overlay')[1].strip()
+                        shape, url = parts.split(':', 1)
+                        shape = shape.strip()
+                        url = url.strip()
+                        overlay_cache[shape] = url
+                        
+                        # Extract R2 key from Shotstack asset URL if possible
+                        # Format: https://api.shotstack.io/stage/assets/ASSET_ID/...
+                        if 'shotstack.io' in url:
+                            r2_key = f"overlays/{user_id}/{shape}_{int(time.time())}.mov"
+                            r2_cache[shape] = r2_key
+                    except Exception as e:
+                        logger.warning(f"[MONTAGE] Failed to parse overlay URL from log: {e}")
+            
+            if overlay_cache:
+                logger.info(f"[MONTAGE] Caching {len(overlay_cache)} overlay URLs for user {user_id}")
+                from tg_bot.utils.user_state import set_cached_overlay_urls
+                set_cached_overlay_urls(user_id, overlay_cache, r2_cache)
             
             # 5. Скачать видео
             result_file = Path(tmpdir) / f"composite_{user_id}_{int(time.time())}.mp4"

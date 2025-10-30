@@ -148,6 +148,11 @@ def parse_args() -> argparse.Namespace:
         help="Длительность интро (секунды, default: 2.5).",
     )
     parser.add_argument(
+        "--user-id",
+        type=int,
+        help="User ID for caching overlay results.",
+    )
+    parser.add_argument(
         "--intro-templates",
         help="Список шаблонов для интро (через запятую). По умолчанию — все выбранные сценарии.",
     )
@@ -695,10 +700,38 @@ def generate_overlay_urls(
     circle_radius: float,
     circle_center_x: float,
     circle_center_y: float,
+    use_cache: bool = True,
+    user_id: Optional[int] = None,
 ) -> Dict[str, str]:
     """
-    Generate overlay URLs - uses Modal GPU if available, otherwise local CPU.
+    Generate overlay URLs - checks cache first, then uses Modal GPU or local CPU.
     """
+    # Check cache if enabled and user_id provided
+    if use_cache and user_id:
+        try:
+            # Import here to avoid circular dependency
+            import sys
+            sys.path.insert(0, str(Path(__file__).parent.parent))
+            from tg_bot.utils.user_state import get_cached_overlay_urls
+            
+            cached = get_cached_overlay_urls(user_id)
+            if cached:
+                # Check if all required shapes are in cache
+                required_shapes = set(shapes)
+                cached_shapes = set(cached.keys())
+                
+                if required_shapes.issubset(cached_shapes):
+                    logger.info(f"[AUTOPIPELINE] ✅ Using cached overlay URLs: {list(cached.keys())}")
+                    return {shape: cached[shape] for shape in required_shapes}
+                else:
+                    missing = required_shapes - cached_shapes
+                    logger.info(f"[AUTOPIPELINE] ⚠️ Cache incomplete, missing shapes: {list(missing)}")
+        except Exception as e:
+            logger.warning(f"[AUTOPIPELINE] Failed to check overlay cache: {e}")
+    
+    # Continue with normal generation if no cache
+    logger.info(f"[AUTOPIPELINE] Generating overlays (no cache)")
+    
     # Check if Modal GPU service is configured
     modal_endpoint = os.getenv("MODAL_OVERLAY_ENDPOINT")
     
@@ -833,6 +866,9 @@ def main() -> None:
         logger.info(f"[AUTOPIPELINE] 📊 Overlay engine: {args.overlay_engine}")
         logger.info(f"[AUTOPIPELINE] 📊 Container: {args.overlay_container}")
     
+    # Extract user_id from args if available
+    user_id = args.user_id if hasattr(args, 'user_id') else None
+    
     overlay_urls = generate_overlay_urls(
         head_url=args.head_url,
         shapes=required_shapes,
@@ -845,7 +881,13 @@ def main() -> None:
         circle_radius=args.circle_radius,
         circle_center_x=args.circle_center_x,
         circle_center_y=args.circle_center_y,
+        use_cache=True,
+        user_id=user_id,
     )
+    
+    # Log generated overlays for caching
+    for shape, url in overlay_urls.items():
+        logger.info(f"[AUTOPIPELINE] Generated overlay {shape}: {url}")
     
     if required_shapes:
         overlay_duration = time.time() - start_time

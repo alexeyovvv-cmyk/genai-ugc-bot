@@ -166,6 +166,28 @@ FSM State → UserState DB → Handler Logic → Next State
 - Обработка статусов генерации
 ```
 
+#### **video_editing_service.py** - Видеомонтаж
+```python
+# Интеграция: Shotstack API + Modal GPU
+# Функции:
+- add_subtitles_to_video() - добавление субтитров к видео
+- composite_head_with_background() - композитинг персонажа с фоном
+- download_video_from_url() - скачивание видео с R2
+- Детальное логирование времени выполнения
+- Интеграция с autopipeline (subprocess)
+```
+
+#### **modal_client.py** - Modal GPU клиент
+```python
+# Интеграция: Modal GPU сервис
+# Функции:
+- ModalOverlayClient() - клиент для асинхронной обработки
+- submit_overlay_job() - отправка задачи на GPU
+- poll_job_status() - проверка статуса задачи
+- get_job_result() - получение результата
+- process_overlay_async() - полный цикл submit → poll → result
+```
+
 #### **nano_banana_service.py** - Редактирование
 ```python
 # Интеграция: fal.ai nano-banana
@@ -372,6 +394,83 @@ CREATE INDEX idx_generation_history_created_at ON generation_history(created_at)
 - Шифрование чувствительных данных
 - Очистка временных файлов
 
+## 🎬 Видеомонтаж и Modal GPU
+
+### Архитектура гибридной обработки
+
+Для формата "Персонаж с бекграундом" используется гибридная архитектура:
+
+```
+Railway (video_editing_service.py)
+    ↓
+Subprocess: autopipeline.py
+    ├─ Скачивание видео (R2)
+    ├─ Анализ речи (ffprobe + speech detection)
+    ├─ Генерация overlay → Modal GPU (prepare_overlay)
+    │   ↓
+    │   Modal GPU Service (A10G)
+    │   ├─ Background removal (rembg/mediapipe)
+    │   ├─ Alpha matting
+    │   ├─ Shape masking (circle/rect)
+    │   └─ Upload to Shotstack
+    ├─ Конфигурация template (Shotstack JSON)
+    ├─ Выравнивание субтитров
+    └─ Render через Shotstack API
+    ↓
+Final video URL
+```
+
+### Modal GPU интеграция
+
+**Зачем:**
+- Обработка overlay на CPU занимала ~10 минут (0.5 fps)
+- Modal GPU (A10G) обрабатывает за ~30-60 секунд
+- **Ускорение в 10-20 раз**
+
+**Как работает:**
+1. `autopipeline.py` проверяет `MODAL_OVERLAY_ENDPOINT` env var
+2. Если Modal доступен → отправляет задачу через `ModalOverlayClient`
+3. Клиент делает POST запрос → получает `job_id`
+4. Polling каждые 5 секунд до статуса `completed`
+5. Получение результата (Shotstack URL overlay видео)
+6. Fallback на CPU если Modal недоступен
+
+**Стоимость:**
+- ~$0.06-0.12 за видео на A10G GPU
+- Оплата только за использование (serverless)
+
+### Детальное логирование
+
+Для диагностики производительности реализовано структурированное логирование:
+
+**Префиксы:**
+- `[MONTAGE]` - video_editing_service.py
+- `[AUTOPIPELINE]` - autopipeline.py
+- `[OVERLAY]` - prepare_overlay.py
+- `[ASSEMBLE]` - assemble.py (Shotstack)
+- `[MODAL]` - Modal GPU клиент
+- `[TIMING]` - таймеры выполнения
+
+**Метрики:**
+- ⏱️ Длительность каждого этапа
+- 📊 Размеры файлов (MB)
+- 🚀 Скорость передачи (MB/s)
+- 📈 Прогресс обработки (fps для overlay)
+- ✅/❌ Статусы операций
+
+**Пример логов:**
+```
+[MONTAGE] ▶️ Starting video montage for user 12345
+[MONTAGE] ⏱️ R2 URL generation completed in 0.05s
+[AUTOPIPELINE] ▶️ Starting autopipeline
+[AUTOPIPELINE] 🚀 Using Modal GPU service for overlay generation
+[MODAL] 📊 Job call_xyz status: processing (elapsed: 10s)
+[MODAL] ✅ Job call_xyz completed in 45.2s
+[AUTOPIPELINE] ✅ Overlays generated via Modal GPU in 45.2s
+[ASSEMBLE] ⏱️ Shotstack render completed in 15.3s (billable: 2.1s)
+[MONTAGE] ✅ Video montage completed in 62.8s
+```
+
 ## 📊 Мониторинг
 
 ### Логирование
@@ -380,6 +479,7 @@ CREATE INDEX idx_generation_history_created_at ON generation_history(created_at)
 logger.info(f"[UGC] User {user_id} started generation")
 logger.error(f"[TTS] Failed to generate audio: {error}")
 logger.warning(f"[R2] Upload failed, using local storage")
+logger.info(f"[TIMING] ⏱️ Operation completed in {duration:.2f}s")
 ```
 
 ### Метрики
@@ -388,6 +488,11 @@ logger.warning(f"[R2] Upload failed, using local storage")
 - Использование кредитов
 - Ошибки API
 - Время отклика сервисов
+- **Производительность монтажа:**
+  - Время обработки overlay (Modal GPU vs CPU)
+  - Время Shotstack render
+  - Общее время монтажа
+  - Стоимость Modal GPU
 
 ## 🚀 Производительность
 
@@ -425,6 +530,11 @@ R2_ACCESS_KEY_ID=...
 R2_SECRET_ACCESS_KEY=...
 R2_BUCKET_NAME=...
 R2_ENDPOINT_URL=...
+
+# Видеомонтаж
+SHOTSTACK_API_KEY=...
+SHOTSTACK_STAGE=v1
+MODAL_OVERLAY_ENDPOINT=https://user--app-submit.modal.run  # Опционально
 
 # Админка
 ADMIN_FEEDBACK_CHAT_ID=...
@@ -489,6 +599,22 @@ def test_character():
 
 ---
 
-**Версия архитектуры**: 2.0  
+**Версия архитектуры**: 2.1  
 **Статус**: Production Ready  
-**Последнее обновление**: Декабрь 2024
+**Последнее обновление**: Октябрь 2025
+
+## 📝 История изменений
+
+### v2.1 (Октябрь 2025)
+- ✅ Добавлена Modal GPU интеграция для видеомонтажа (10-20x ускорение)
+- ✅ Реализовано детальное логирование производительности
+- ✅ Добавлен `video_editing_service.py` для монтажа персонажа с бекграундом
+- ✅ Интеграция с Shotstack API
+- ✅ Гибридная архитектура: Modal GPU + Railway CPU с fallback
+- ✅ Утилита `timing.py` для измерения времени выполнения
+
+### v2.0 (Декабрь 2024)
+- ✅ Рефакторинг handlers в модульную структуру
+- ✅ Централизованное логирование
+- ✅ Система форматов видео
+- ✅ Cloudflare R2 интеграция

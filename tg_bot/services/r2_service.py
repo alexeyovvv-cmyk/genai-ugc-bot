@@ -313,7 +313,7 @@ def test_connection() -> bool:
 
 def configure_temp_edits_lifecycle() -> bool:
     """
-    Configure R2 lifecycle policy to auto-delete temp edits after 24 hours.
+    Configure R2 lifecycle policy to auto-delete temp edits after 24 hours and overlay cache after 7 days.
     
     Returns:
         bool: Configuration success
@@ -328,6 +328,12 @@ def configure_temp_edits_lifecycle() -> bool:
                     'Filter': {'Prefix': 'users/temp_edits/'},
                     'Status': 'Enabled',
                     'Expiration': {'Days': 1}
+                },
+                {
+                    'ID': 'DeleteOverlayCacheAfter7Days',
+                    'Filter': {'Prefix': 'overlays/'},
+                    'Status': 'Enabled',
+                    'Expiration': {'Days': 7}
                 }
             ]
         }
@@ -337,7 +343,7 @@ def configure_temp_edits_lifecycle() -> bool:
             LifecycleConfiguration=lifecycle_config
         )
         
-        print(f"[R2] ✅ Lifecycle policy configured for temp edits (24h TTL)")
+        print(f"[R2] ✅ Lifecycle policy configured for temp edits (24h TTL) and overlay cache (7 days TTL)")
         return True
         
     except Exception as e:

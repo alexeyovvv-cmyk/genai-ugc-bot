@@ -51,7 +51,12 @@ async def setup_startup(bot: Bot):
                 ADD COLUMN IF NOT EXISTS original_video_r2_key VARCHAR,
                 ADD COLUMN IF NOT EXISTS original_video_url VARCHAR,
                 ADD COLUMN IF NOT EXISTS last_generated_video_r2_key VARCHAR,
-                ADD COLUMN IF NOT EXISTS last_generated_video_url VARCHAR;
+                ADD COLUMN IF NOT EXISTS last_generated_video_url VARCHAR,
+                ADD COLUMN IF NOT EXISTS cached_overlay_circle_url VARCHAR,
+                ADD COLUMN IF NOT EXISTS cached_overlay_rect_url VARCHAR,
+                ADD COLUMN IF NOT EXISTS cached_overlay_circle_r2_key VARCHAR,
+                ADD COLUMN IF NOT EXISTS cached_overlay_rect_r2_key VARCHAR,
+                ADD COLUMN IF NOT EXISTS overlay_cache_created_at TIMESTAMP;
                 
                 -- Add user name fields to users table
                 ALTER TABLE users

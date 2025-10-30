@@ -355,7 +355,7 @@ def get_last_generated_video(tg_id: int) -> Optional[dict]:
 
 
 def clear_all_video_data(tg_id: int) -> None:
-    """Clear all video data for user (original and last generated)"""
+    """Clear all video data for user (original and last generated) including overlay cache"""
     with SessionLocal() as db:
         user = db.scalar(select(User).where(User.tg_id == tg_id))
         if not user:
@@ -365,5 +365,86 @@ def clear_all_video_data(tg_id: int) -> None:
         state.original_video_url = None
         state.last_generated_video_r2_key = None
         state.last_generated_video_url = None
+        db.commit()
+    
+    # Clear overlay cache
+    clear_cached_overlays(tg_id)
+
+
+# Overlay cache helpers
+def set_cached_overlay_urls(tg_id: int, overlay_urls: dict, r2_keys: dict) -> None:
+    """
+    Cache overlay URLs for current editing session.
+    
+    Args:
+        tg_id: Telegram user ID
+        overlay_urls: Dict with 'circle' and/or 'rect' keys mapping to Shotstack URLs
+        r2_keys: Dict with 'circle' and/or 'rect' keys mapping to R2 keys
+    """
+    with SessionLocal() as db:
+        user = db.scalar(select(User).where(User.tg_id == tg_id))
+        if not user:
+            return
+        state = _get_or_create_state(db, user.id)
+        
+        if 'circle' in overlay_urls:
+            state.cached_overlay_circle_url = overlay_urls['circle']
+            state.cached_overlay_circle_r2_key = r2_keys.get('circle')
+        if 'rect' in overlay_urls:
+            state.cached_overlay_rect_url = overlay_urls['rect']
+            state.cached_overlay_rect_r2_key = r2_keys.get('rect')
+        
+        from datetime import datetime
+        state.overlay_cache_created_at = datetime.utcnow()
+        db.commit()
+
+
+def get_cached_overlay_urls(tg_id: int) -> Optional[dict]:
+    """
+    Get cached overlay URLs for current editing session.
+    
+    Returns:
+        Dict with 'circle' and/or 'rect' keys, or None if no cache
+    """
+    with SessionLocal() as db:
+        user = db.scalar(select(User).where(User.tg_id == tg_id))
+        if not user:
+            return None
+        state = db.scalar(select(UserState).where(UserState.user_id == user.id))
+        if not state:
+            return None
+        
+        result = {}
+        if state.cached_overlay_circle_url:
+            result['circle'] = state.cached_overlay_circle_url
+        if state.cached_overlay_rect_url:
+            result['rect'] = state.cached_overlay_rect_url
+        
+        return result if result else None
+
+
+def clear_cached_overlays(tg_id: int) -> None:
+    """Clear overlay cache and delete files from R2."""
+    with SessionLocal() as db:
+        user = db.scalar(select(User).where(User.tg_id == tg_id))
+        if not user:
+            return
+        state = db.scalar(select(UserState).where(UserState.user_id == user.id))
+        if not state:
+            return
+        
+        # Delete from R2
+        from tg_bot.services.r2_service import delete_file
+        if state.cached_overlay_circle_r2_key:
+            delete_file(state.cached_overlay_circle_r2_key)
+        if state.cached_overlay_rect_r2_key:
+            delete_file(state.cached_overlay_rect_r2_key)
+        
+        # Clear from DB
+        state.cached_overlay_circle_url = None
+        state.cached_overlay_rect_url = None
+        state.cached_overlay_circle_r2_key = None
+        state.cached_overlay_rect_r2_key = None
+        state.overlay_cache_created_at = None
         db.commit()
 

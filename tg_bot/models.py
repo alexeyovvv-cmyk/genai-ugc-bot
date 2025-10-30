@@ -66,6 +66,12 @@ class UserState(Base):
     original_video_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # URL исходного видео
     last_generated_video_r2_key: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # R2 ключ последнего сгенерированного видео
     last_generated_video_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # URL последнего видео для быстрого доступа
+    # Overlay cache fields (for video editing session)
+    cached_overlay_circle_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # Shotstack URL for circle overlay
+    cached_overlay_rect_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)    # Shotstack URL for rect overlay
+    cached_overlay_circle_r2_key: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # R2 key for circle overlay
+    cached_overlay_rect_r2_key: Mapped[Optional[str]] = mapped_column(String, nullable=True)    # R2 key for rect overlay
+    overlay_cache_created_at: Mapped[Optional[DateTime]] = mapped_column(DateTime, nullable=True)  # When cache was created
     created_at: Mapped[str] = mapped_column(DateTime, server_default=func.now())
     # updated_at можно добавить позже триггером, пока не требуется
 
