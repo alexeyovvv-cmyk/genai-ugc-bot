@@ -349,7 +349,6 @@ async def character_text_received(m: Message, state: FSMContext):
             logger.info(f"[UGC] 🚫 Блокировка системы безопасности - возвращаем к редактированию персонажа")
             
             # Получаем текущего персонажа для отображения
-            from tg_bot.utils.files import get_character_image
             from tg_bot.keyboards import character_editing_choice_menu
             
             gender = get_character_gender(m.from_user.id)
