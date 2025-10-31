@@ -35,17 +35,31 @@ def _enhance_prompt_sync(text: str) -> str:
     try:
         client = OpenAI(api_key=OPENAI_API_KEY)
         
-        # Call fine-tuned model
-        response = client.chat.completions.create(
-            model=ENHANCEMENT_MODEL_ID,
-            messages=[
-                {"role": "user", "content": text}
-            ],
-            temperature=0.7,
-            max_tokens=500
+        # Call prompt API with user text
+        response = client.responses.create(
+            prompt={
+                "id": ENHANCEMENT_MODEL_ID,
+                "version": "4"
+            },
+            input=text
         )
         
-        enhanced_text = response.choices[0].message.content
+        # Extract enhanced text from response
+        logger.info(f"[ENHANCEMENT] Raw response type: {type(response)}")
+        logger.info(f"[ENHANCEMENT] Raw response: {response}")
+        
+        # Try different ways to extract text
+        if hasattr(response, 'text'):
+            enhanced_text = response.text
+        elif hasattr(response, 'output'):
+            enhanced_text = response.output
+        elif hasattr(response, 'content'):
+            enhanced_text = response.content
+        elif isinstance(response, dict):
+            enhanced_text = response.get('text') or response.get('output') or response.get('content') or str(response)
+        else:
+            enhanced_text = str(response)
+        
         logger.info(f"[ENHANCEMENT] Enhanced result: {enhanced_text}")
         
         return enhanced_text
