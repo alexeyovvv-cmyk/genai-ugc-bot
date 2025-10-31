@@ -265,3 +265,10 @@ def video_editing_menu():
         [InlineKeyboardButton(text="🎬 Монтаж", callback_data="start_video_editing")],
         [InlineKeyboardButton(text="✅ Завершить", callback_data="finish_generation")],
     ])
+
+def segment_confirmation_menu():
+    """Меню подтверждения эмоциональной разбивки текста"""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Подтвердить", callback_data="confirm_segments")],
+        [InlineKeyboardButton(text="❌ Отменить", callback_data="cancel_segments")]
+    ])

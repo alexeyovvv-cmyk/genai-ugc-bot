@@ -23,6 +23,7 @@ class UGCCreation(StatesGroup):
     waiting_voice_gallery = State()  # ждем выбор голоса из галереи с пагинацией
     waiting_voice_selection = State()  # ждем выбор голоса (старое состояние, для совместимости)
     waiting_character_text = State()  # ждем текст, что должен сказать персонаж
+    waiting_segment_confirmation = State()  # ждем подтверждение эмоциональной разбивки
     waiting_audio_confirmation = State()  # ждем подтверждение аудио или переделку
     waiting_text_change_decision = State()  # ждем решение, менять ли текст
     waiting_new_character_text = State()  # ждем новый текст для переделки аудио

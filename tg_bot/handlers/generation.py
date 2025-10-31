@@ -28,13 +28,18 @@ from tg_bot.utils.user_state import (
 )
 from tg_bot.utils.voice_mapping import get_voice_for_character, get_default_language, get_default_emotion
 from tg_bot.utils.files import get_character_image
-from tg_bot.utils.audio import check_audio_duration_limit
+from tg_bot.utils.audio import check_audio_duration_limit, concatenate_audio_files
+from tg_bot.utils.emotion_mapping import normalize_emotion
+from tg_bot.utils.constants import DEFAULT_TTS_EMOTION
+from tg_bot.services.openai_enhancement_service import enhance_prompt, parse_emotion_segments
 from tg_bot.services.minimax_service import tts_to_file
 from tg_bot.services.falai_service import generate_talking_head_video
 from tg_bot.services.r2_service import download_file, delete_file
 from tg_bot.keyboards import (
-    back_to_main_menu, main_menu, video_editing_menu
+    back_to_main_menu, main_menu, video_editing_menu, segment_confirmation_menu,
+    audio_confirmation_menu
 )
+from tg_bot.config import BASE_DIR
 from tg_bot.utils.logger import setup_logger
 from tg_bot.dispatcher import dp
 
@@ -43,12 +48,12 @@ logger = setup_logger(__name__)
 
 @dp.message(StateFilter(UGCCreation.waiting_character_text), F.text)
 async def character_text_received(m: Message, state: FSMContext):
-    """Получен текст от пользователя - сразу генерируем видео"""
-    # Сохраняем текст
+    """Получен текст от пользователя - применяем prompt enhancement и показываем разбивку"""
+    # Сохраняем исходный текст
     set_character_text(m.from_user.id, m.text)
-    logger.info(f"User {m.from_user.id} ввел текст персонажа: {m.text[:50]}...")
+    logger.info(f"[GENERATION] User {m.from_user.id} entered text: {m.text[:100]}...")
     
-    # Получаем параметры персонажа для автовыбора голоса
+    # Получаем параметры персонажа
     gender = get_character_gender(m.from_user.id)
     age = get_character_age(m.from_user.id)
     
@@ -60,16 +65,88 @@ async def character_text_received(m: Message, state: FSMContext):
         await state.clear()
         return
     
+    try:
+        # Показываем что обрабатываем текст
+        await m.answer("🤖 Обрабатываю текст и анализирую эмоции...")
+        
+        # Вызываем prompt enhancement
+        logger.info(f"[GENERATION] Starting prompt enhancement...")
+        enhanced_text = await enhance_prompt(m.text)
+        
+        # Парсим сегменты с эмоциями
+        segments = parse_emotion_segments(enhanced_text)
+        
+        if not segments:
+            # Если парсинг не удался, используем исходный текст без разбивки
+            logger.warning(f"[ENHANCEMENT] No segments parsed, using original text")
+            segments = [{"emotion": DEFAULT_TTS_EMOTION, "text": m.text}]
+        
+        # Нормализуем эмоции
+        for segment in segments:
+            segment['emotion'] = normalize_emotion(segment['emotion'])
+        
+        logger.info(f"[GENERATION] Showing {len(segments)} segments to user for confirmation")
+        
+        # Сохраняем сегменты в state
+        await state.update_data(emotion_segments=segments)
+        
+        # Формируем сообщение с разбивкой
+        segments_text = "Разбивка по эмоциям:\n\n"
+        for i, segment in enumerate(segments, 1):
+            segments_text += f"{i}. [{segment['emotion']}] {segment['text']}\n\n"
+        
+        segments_text += "Подтвердить эту разбивку?"
+        
+        # Показываем пользователю разбивку
+        await m.answer(
+            segments_text,
+            reply_markup=segment_confirmation_menu()
+        )
+        
+        # Устанавливаем состояние ожидания подтверждения
+        await state.set_state(UGCCreation.waiting_segment_confirmation)
+        
+    except Exception as e:
+        logger.error(f"[ENHANCEMENT] OpenAI API error: {e}")
+        await m.answer(
+            "❌ Ошибка обработки текста. Попробуй еще раз.",
+            reply_markup=back_to_main_menu()
+        )
+        return
+
+
+@dp.callback_query(F.data == "cancel_segments")
+async def cancel_segments(c: CallbackQuery, state: FSMContext):
+    """Отменить разбивку и вернуться к вводу текста."""
+    logger.info(f"[GENERATION] User {c.from_user.id} cancelled emotion segments, returning to text input")
+    await c.message.edit_text("Введите текст заново:")
+    await state.set_state(UGCCreation.waiting_character_text)
+    await c.answer()
+
+
+@dp.callback_query(F.data == "confirm_segments")
+async def confirm_segments(c: CallbackQuery, state: FSMContext):
+    """Подтвердить эмоциональную разбивку и начать генерацию аудио."""
+    logger.info(f"[GENERATION] User {c.from_user.id} confirmed emotion segments")
+    
+    # Получаем сегменты из FSM state
+    data = await state.get_data()
+    segments = data.get('emotion_segments', [])
+    logger.info(f"[GENERATION] Starting TTS generation for {len(segments)} segments")
+    
+    # Получаем параметры персонажа для автовыбора голоса
+    gender = get_character_gender(c.from_user.id)
+    age = get_character_age(c.from_user.id)
+    
     # Автоматически определяем голос по полу персонажа
     voice_id = get_voice_for_character(gender, age)
     language = get_default_language()
-    emotion = get_default_emotion()
     
     logger.info(f"[UGC] Автовыбор голоса: gender={gender}, voice_id={voice_id}")
     
     try:
         # Проверяем кредиты
-        credits = get_credits(m.from_user.id)
+        credits = get_credits(c.from_user.id)
         if credits < COST_UGC_VIDEO:
             await m.answer(
                 f"❌ Недостаточно кредитов (нужно {COST_UGC_VIDEO} кредит).\n\n"
@@ -80,9 +157,9 @@ async def character_text_received(m: Message, state: FSMContext):
             return
         
         # Списываем кредит
-        ok = spend_credits(m.from_user.id, COST_UGC_VIDEO, "ugc_video_creation")
+        ok = spend_credits(c.from_user.id, COST_UGC_VIDEO, "ugc_video_creation")
         if not ok:
-            await m.answer(
+            await c.message.answer(
                 "❌ Ошибка при списании кредита.\n\n"
                 "Свяжись с администратором.",
                 reply_markup=main_menu()
@@ -90,19 +167,70 @@ async def character_text_received(m: Message, state: FSMContext):
             await state.clear()
             return
     
-        # Генерируем аудио (не показываем пользователю)
-        await m.answer("🎤 Генерирую озвучку...")
-        logger.info(f"[UGC] Генерация MiniMax TTS для пользователя {m.from_user.id}, voice_id={voice_id}")
+        # Генерируем N отдельных аудио для каждого сегмента с эмоциями
+        await c.message.answer(f"🎤 Генерирую озвучку ({len(segments)} сегментов)...")
+        logger.info(f"[UGC] Генерация MiniMax TTS для пользователя {c.from_user.id}, voice_id={voice_id}")
         
-        audio_path = await tts_to_file(m.text, voice_id, language, emotion, user_id=m.from_user.id)
+        audio_paths = []
+        for i, segment in enumerate(segments):
+            logger.info(f"[GENERATION] Segment {i+1}/{len(segments)}: emotion={segment['emotion']}, text={segment['text'][:50]}...")
+            
+            # ВАЖНО: Отдельный запрос для каждого сегмента с его эмоцией
+            try:
+                audio_path = await tts_to_file(
+                    text=segment['text'],
+                    voice_id=voice_id,
+                    language=language,
+                    emotion=segment['emotion'],  # Передать эмоцию из тега
+                    user_id=c.from_user.id
+                )
+                
+                if not audio_path:
+                    raise Exception(f"Не удалось сгенерировать аудио для сегмента {i+1}")
+                
+                logger.info(f"[GENERATION] Segment {i+1} TTS completed: {audio_path}")
+                audio_paths.append(audio_path)
+                
+            except Exception as e:
+                logger.error(f"[GENERATION] TTS failed for segment {i+1}: {e}")
+                # Возвращаем кредит при ошибке
+                add_credits(c.from_user.id, COST_UGC_VIDEO, "refund_tts_fail")
+                await c.message.answer(
+                    f"❌ Ошибка генерации аудио. Попробуйте позже.",
+                    reply_markup=main_menu()
+                )
+                await state.clear()
+                return
         
-        if not audio_path:
-            raise Exception("Не удалось сгенерировать аудио")
+        logger.info(f"[GENERATION] All {len(audio_paths)} TTS segments generated successfully")
         
-        logger.info(f"[UGC] Аудио сгенерировано: {audio_path}")
+        # Склеить все аудио в том же порядке с паузами
+        logger.info(f"[GENERATION] Starting audio concatenation...")
+        timestamp = int(time.time())
+        audio_dir = BASE_DIR / "data" / "audio"
+        audio_dir.mkdir(parents=True, exist_ok=True)
+        final_audio_path = str(audio_dir / f"final_audio_{c.from_user.id}_{timestamp}.mp3")
+        
+        try:
+            final_audio_path = await concatenate_audio_files(
+                audio_paths=audio_paths,
+                output_path=final_audio_path,
+                pause_duration_ms=400
+            )
+            logger.info(f"[GENERATION] Audio concatenation completed: {final_audio_path}")
+        except Exception as e:
+            logger.error(f"[AUDIO_CONCAT] Concatenation failed: {e}")
+            # Fallback: использовать первый аудио файл
+            if audio_paths:
+                final_audio_path = audio_paths[0]
+                logger.warning(f"[AUDIO_CONCAT] Using first segment as fallback: {final_audio_path}")
+            else:
+                raise Exception("Не удалось сгенерировать аудио")
+        
+        audio_path = final_audio_path
         
         # Сохраняем путь к аудио
-        set_last_audio(m.from_user.id, audio_path)
+        set_last_audio(c.from_user.id, audio_path)
         
         # Проверяем длительность
         is_valid, duration = check_audio_duration_limit(audio_path, max_seconds=15.0)
@@ -111,8 +239,8 @@ async def character_text_received(m: Message, state: FSMContext):
         
         if not is_valid:
             # Возвращаем кредит при ошибке
-            add_credits(m.from_user.id, COST_UGC_VIDEO, "refund_audio_too_long")
-            await m.answer(
+            add_credits(c.from_user.id, COST_UGC_VIDEO, "refund_audio_too_long")
+            await c.message.answer(
                 f"❌ <b>Аудио слишком длинное!</b>\n\n"
                 f"Длительность твоей озвучки: <b>{duration:.1f} секунд</b>\n"
                 f"Максимум: <b>15 секунд</b>\n\n"
@@ -120,28 +248,108 @@ async def character_text_received(m: Message, state: FSMContext):
                 parse_mode="HTML",
                 reply_markup=back_to_main_menu()
             )
-            # Очистка аудио
+            # Очистка аудио и временных файлов
             try:
                 if os.path.exists(audio_path):
                     os.remove(audio_path)
+                # Очищаем временные сегменты
+                for temp_path in audio_paths:
+                    if os.path.exists(temp_path):
+                        os.remove(temp_path)
             except:
                 pass
             await state.clear()
             return
         
-        # Сразу переходим к генерации видео (логика из audio_confirmed)
-        await m.answer("⏳ Начинаю создание UGC рекламы...\n\nЭто займет несколько минут.")
-        logger.info(f"[UGC] Стартовое сообщение отправлено")
+        # Отправляем склеенное аудио пользователю для прослушивания
+        await c.message.answer("🎧 Вот как будет звучать озвучка:")
         
-        # Получаем сохраненные данные
-        character_idx = get_selected_character(m.from_user.id)
+        try:
+            # Отправляем аудио файл
+            await c.message.answer_audio(
+                FSInputFile(audio_path),
+                caption="Послушай результат. Если всё устраивает - подтверди генерацию видео."
+            )
+            logger.info(f"[GENERATION] Audio sent to user for confirmation")
+            
+            # Устанавливаем состояние ожидания подтверждения аудио
+            await state.set_state(UGCCreation.waiting_audio_confirmation)
+            
+            # Показываем клавиатуру с подтверждением
+            await c.message.answer(
+                "Подтвердить озвучку?",
+                reply_markup=audio_confirmation_menu()
+            )
+            await c.answer()
+            
+        except Exception as audio_send_error:
+            logger.error(f"[GENERATION] Failed to send audio: {audio_send_error}")
+            await c.message.answer(
+                "❌ Не удалось отправить аудио. Попробуй еще раз.",
+                reply_markup=back_to_main_menu()
+            )
+            await state.clear()
+            return
+    
+    except Exception as e:
+        logger.error(f"[GENERATION] Error in confirm_segments: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        # Возвращаем кредит при ошибке
+        add_credits(c.from_user.id, COST_UGC_VIDEO, "refund_segment_error")
+        
+        await c.message.answer(
+            "❌ Произошла ошибка при генерации аудио. Попробуй еще раз.",
+            reply_markup=main_menu()
+        )
+        await state.clear()
+        await c.answer()
+
+
+@dp.callback_query(F.data == "audio_redo")
+async def audio_redo(c: CallbackQuery, state: FSMContext):
+    """Переделать аудио - возвращаемся к вводу текста."""
+    logger.info(f"[GENERATION] User {c.from_user.id} requested audio redo, returning to text input")
+    
+    await c.message.answer("Напиши текст заново:")
+    await state.set_state(UGCCreation.waiting_character_text)
+    await c.answer()
+
+
+@dp.callback_query(F.data == "audio_confirmed")
+async def audio_confirmed(c: CallbackQuery, state: FSMContext):
+    """Подтверждение аудио - начинаем генерацию видео."""
+    logger.info(f"[GENERATION] User {c.from_user.id} confirmed audio, starting video generation")
+    
+    # Получаем сохраненный аудио путь
+    audio_path = get_last_audio(c.from_user.id)
+    
+    if not audio_path or not os.path.exists(audio_path):
+        await c.message.answer(
+            "❌ Аудио файл не найден. Попробуй еще раз.",
+            reply_markup=main_menu()
+        )
+        await state.clear()
+        await c.answer()
+        return
+    
+    # Получаем параметры персонажа
+    gender = get_character_gender(c.from_user.id)
+    age = get_character_age(c.from_user.id)
+    character_idx = get_selected_character(c.from_user.id)
+    
+    try:
+        # Начинаем генерацию видео
+        await c.message.answer("⏳ Начинаю создание UGC рекламы...\n\nЭто займет несколько минут.")
+        logger.info(f"[UGC] Стартовое сообщение отправлено")
         
         # Получаем изображение персонажа (сначала проверяем отредактированную версию)
         if not gender or not age or character_idx is None:
             raise Exception("Не выбраны параметры персонажа (пол, возраст или индекс). Начните сначала.")
         
         # Проверяем, есть ли отредактированная версия
-        edited_character_path = get_edited_character_path(m.from_user.id)
+        edited_character_path = get_edited_character_path(c.from_user.id)
         temp_edited_path = None
         
         if edited_character_path:
@@ -194,11 +402,11 @@ async def character_text_received(m: Message, state: FSMContext):
         logger.info(f"[UGC] Аудио файл: {audio_path}")
         
         try:
-            logger.info(f"[UGC] Calling generate_talking_head_video with user_id: {m.from_user.id}")
+            logger.info(f"[UGC] Calling generate_talking_head_video with user_id: {c.from_user.id}")
             video_result = await generate_talking_head_video(
                 audio_path=audio_path,
                 image_path=selected_frame,
-                user_id=m.from_user.id
+                user_id=c.from_user.id
             )
             
             if not video_result:
@@ -221,22 +429,22 @@ async def character_text_received(m: Message, state: FSMContext):
             import traceback
             traceback.print_exc()
             # Авто-рефанд кредита при неуспехе генерации
-            add_credits(m.from_user.id, COST_UGC_VIDEO, "refund_ugc_fail")
+            add_credits(c.from_user.id, COST_UGC_VIDEO, "refund_ugc_fail")
             raise video_error  # Перебрасываем оригинальную ошибку без обертки
         
         if video_path:
-            await m.answer("✅ Отправляю готовое видео...")
+            await c.message.answer("✅ Отправляю готовое видео...")
             logger.info(f"[UGC] Отправляем видео пользователю...")
             
             # Отправляем видео (используем presigned URL если есть, иначе локальный файл)
             if video_url:
-                await m.answer_video(
+                await c.message.answer_video(
                     video_url, 
                     caption=f"🎉 Твоя UGC реклама готова!\n\n(-{COST_UGC_VIDEO} кредит списан)"
                 )
                 logger.info(f"[UGC] ✅ Видео отправлено через R2 URL")
             else:
-                await m.answer_video(
+                await c.message.answer_video(
                     FSInputFile(video_path), 
                     caption=f"🎉 Твоя UGC реклама готова!\n\n(-{COST_UGC_VIDEO} кредит списан)"
                 )
@@ -246,19 +454,19 @@ async def character_text_received(m: Message, state: FSMContext):
             try:
                 from tg_bot.utils.user_storage import save_user_generation
                 logger.info(f"[UGC] Сохраняем генерацию в историю...")
-                logger.info(f"[UGC] User ID: {m.from_user.id}")
+                logger.info(f"[UGC] User ID: {c.from_user.id}")
                 logger.info(f"[UGC] R2 Video Key: {r2_video_key}")
-                logger.info(f"[UGC] Character: {get_character_gender(m.from_user.id)}/{get_character_age(m.from_user.id)}")
-                logger.info(f"[UGC] Text: {get_character_text(m.from_user.id)}")
+                logger.info(f"[UGC] Character: {get_character_gender(c.from_user.id)}/{get_character_age(c.from_user.id)}")
+                logger.info(f"[UGC] Text: {get_character_text(c.from_user.id)}")
                 
                 generation_id = save_user_generation(
-                    user_id=m.from_user.id,
+                    user_id=c.from_user.id,
                     generation_type='video',
                     r2_video_key=r2_video_key,
                     r2_audio_key=None,  # Аудио включено в MP4, не сохраняем отдельно
-                    character_gender=get_character_gender(m.from_user.id),
-                    character_age=get_character_age(m.from_user.id),
-                    text_prompt=get_character_text(m.from_user.id),
+                    character_gender=get_character_gender(c.from_user.id),
+                    character_age=get_character_age(c.from_user.id),
+                    text_prompt=get_character_text(c.from_user.id),
                     credits_spent=COST_UGC_VIDEO
                 )
                 logger.info(f"[UGC] ✅ Генерация сохранена в историю с ID: {generation_id}")
@@ -268,7 +476,7 @@ async def character_text_received(m: Message, state: FSMContext):
                 traceback.print_exc()
             
             # Сохраняем информацию об исходном видео для возможности монтажа
-            set_original_video(m.from_user.id, r2_video_key, video_url)
+            set_original_video(c.from_user.id, r2_video_key, video_url)
             logger.info(f"[UGC] ✅ Сохранена информация об исходном видео для монтажа")
             
             # Удаляем видео файл после отправки
@@ -281,7 +489,7 @@ async def character_text_received(m: Message, state: FSMContext):
             
             # Очищаем временные отредактированные изображения персонажа
             try:
-                edited_path = get_edited_character_path(m.from_user.id)
+                edited_path = get_edited_character_path(c.from_user.id)
                 if edited_path:
                     # Check if it's R2 key or local path
                     if edited_path.startswith("users/"):
@@ -302,14 +510,14 @@ async def character_text_received(m: Message, state: FSMContext):
                         logger.info(f"[UGC] ✅ Временный файл удален: {temp_edited_path}")
                 
                 # Очищаем сессию редактирования
-                clear_edit_session(m.from_user.id)
+                clear_edit_session(c.from_user.id)
                 logger.info(f"[UGC] ✅ Сессия редактирования очищена")
             except Exception as cleanup_error:
                 logger.info(f"[UGC] ⚠️ Не удалось очистить временные файлы редактирования: {cleanup_error}")
             
             # Предлагаем монтаж или завершение
             await state.set_state(UGCCreation.waiting_editing_decision)
-            await m.answer(
+            await c.message.answer(
                 "✨ Хочешь смонтировать видео?\n\n"
                 "🎬 <b>Монтаж</b> - добавить субтитры и эффекты\n"
                 "✅ <b>Завершить</b> - оставить как есть",
@@ -319,7 +527,7 @@ async def character_text_received(m: Message, state: FSMContext):
             logger.info(f"[UGC] Предложен выбор: монтаж или завершить")
         else:
             # Авто-рефанд если видео не получено
-            add_credits(m.from_user.id, COST_UGC_VIDEO, "refund_ugc_fail")
+            add_credits(c.from_user.id, COST_UGC_VIDEO, "refund_ugc_fail")
             raise Exception("Видео не было сгенерировано")
         
     except Exception as e:
@@ -329,11 +537,11 @@ async def character_text_received(m: Message, state: FSMContext):
         
         # Очищаем временные файлы редактирования при ошибке
         try:
-            edited_path = get_edited_character_path(m.from_user.id)
+            edited_path = get_edited_character_path(c.from_user.id)
             if edited_path and os.path.exists(edited_path):
                 os.remove(edited_path)
                 logger.info(f"[UGC] ✅ Временное отредактированное изображение удалено при ошибке: {edited_path}")
-            clear_edit_session(m.from_user.id)
+            clear_edit_session(c.from_user.id)
             logger.info(f"[UGC] ✅ Сессия редактирования очищена при ошибке")
         except Exception as cleanup_error:
             logger.info(f"[UGC] ⚠️ Не удалось очистить временные файлы при ошибке: {cleanup_error}")
@@ -344,18 +552,18 @@ async def character_text_received(m: Message, state: FSMContext):
             error_message += "\n\n🔧 Сервис временно недоступен. Попробуй позже."
         elif "заблокировано системой безопасности" in str(e) or "content_policy_violation" in str(e):
             # Возвращаем кредит
-            add_credits(m.from_user.id, COST_UGC_VIDEO, "refund_content_policy_violation")
+            add_credits(c.from_user.id, COST_UGC_VIDEO, "refund_content_policy_violation")
             
             logger.info(f"[UGC] 🚫 Блокировка системы безопасности - возвращаем к редактированию персонажа")
             
             # Получаем текущего персонажа для отображения
             from tg_bot.keyboards import character_editing_choice_menu
             
-            gender = get_character_gender(m.from_user.id)
-            character_idx = get_selected_character(m.from_user.id)
+            gender = get_character_gender(c.from_user.id)
+            character_idx = get_selected_character(c.from_user.id)
             
             # Отправляем сообщение о нарушении правил
-            await m.answer(
+            await c.message.answer(
                 "🚫 <b>Кажется, создаваемое видео нарушает правила площадки</b>\n\n"
                 "❗️ Изображение персонажа было заблокировано системой безопасности.\n\n"
                 "💡 Попробуй изменить персонажа с помощью редактирования или выбери другого:",
@@ -369,7 +577,7 @@ async def character_text_received(m: Message, state: FSMContext):
                     character_path, age = character_data
                     try:
                         # Отправляем изображение персонажа с предложением редактирования
-                        await m.answer_photo(
+                        await c.message.answer_photo(
                             FSInputFile(character_path),
                             caption="🎨 <b>Хочешь отредактировать этого персонажа?</b>\n\n"
                                     "Ты можешь изменить внешность, одежду или окружение.\n\n"
@@ -378,17 +586,19 @@ async def character_text_received(m: Message, state: FSMContext):
                             parse_mode="HTML"
                         )
                         await state.set_state(UGCCreation.waiting_editing_choice)
+                        await c.answer()
                         return
                     except Exception as photo_error:
                         logger.error(f"[UGC] Не удалось отправить фото персонажа: {photo_error}")
             
             # Если не удалось показать персонажа, возвращаем к выбору
             from tg_bot.keyboards import gender_selection_menu
-            await m.answer(
+            await c.message.answer(
                 "Выбери персонажа:",
                 reply_markup=gender_selection_menu()
             )
             await state.set_state(UGCCreation.waiting_gender_selection)
+            await c.answer()
             return
         else:
             if "API" in str(e) or "fal.ai" in str(e) or "TTS service error" in str(e):
@@ -396,10 +606,9 @@ async def character_text_received(m: Message, state: FSMContext):
             else:
                 error_message += "\n\nПопробуй еще раз или свяжись с администратором."
             
-            await m.answer(
+            await c.message.answer(
                 error_message,
                 reply_markup=main_menu()
             )
             await state.clear()
-
-
+            await c.answer()

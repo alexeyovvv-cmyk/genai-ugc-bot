@@ -134,6 +134,8 @@ async def tts_to_file(text: str, voice_id: str, language: str = "auto", emotion:
     """Synthesize speech via MiniMax fal.ai and save to file, returning path."""
     import sys
     logger.info(f"[TTS] Начинаем генерацию MiniMax TTS для текста: '{text[:50]}...'")
+    logger.info(f"[TTS] Generating audio with emotion: {emotion}")
+    logger.info(f"[TTS] Text length: {len(text)} chars")
     sys.stderr.write(f"[TTS] Voice ID: {voice_id}, Language: {language}, Emotion: {emotion}\n")
     sys.stderr.flush()
     
