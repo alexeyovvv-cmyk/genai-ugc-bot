@@ -215,7 +215,7 @@ async def confirm_segments(c: CallbackQuery, state: FSMContext):
             final_audio_path = await concatenate_audio_files(
                 audio_paths=audio_paths,
                 output_path=final_audio_path,
-                pause_duration_ms=400
+                pause_duration_ms=130
             )
             logger.info(f"[GENERATION] Audio concatenation completed: {final_audio_path}")
         except Exception as e:
@@ -233,7 +233,7 @@ async def confirm_segments(c: CallbackQuery, state: FSMContext):
         set_last_audio(c.from_user.id, audio_path)
         
         # Проверяем длительность
-        is_valid, duration = check_audio_duration_limit(audio_path, max_seconds=15.0)
+        is_valid, duration = check_audio_duration_limit(audio_path, max_seconds=30.0)
         
         logger.info(f"[UGC] Длительность аудио: {duration:.2f} сек, валидно: {is_valid}")
         
@@ -243,7 +243,7 @@ async def confirm_segments(c: CallbackQuery, state: FSMContext):
             await c.message.answer(
                 f"❌ <b>Аудио слишком длинное!</b>\n\n"
                 f"Длительность твоей озвучки: <b>{duration:.1f} секунд</b>\n"
-                f"Максимум: <b>15 секунд</b>\n\n"
+                f"Максимум: <b>30 секунд</b>\n\n"
                 f"Пожалуйста, сократи текст и попробуй снова.",
                 parse_mode="HTML",
                 reply_markup=back_to_main_menu()

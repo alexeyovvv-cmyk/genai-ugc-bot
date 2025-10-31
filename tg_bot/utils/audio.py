@@ -54,13 +54,13 @@ def get_audio_duration(audio_path: str) -> Optional[float]:
         return None
 
 
-def check_audio_duration_limit(audio_path: str, max_seconds: float = 15.0) -> tuple[bool, float]:
+def check_audio_duration_limit(audio_path: str, max_seconds: float = 30.0) -> tuple[bool, float]:
     """
     Check if audio duration is within limit.
     
     Args:
         audio_path: Path to audio file
-        max_seconds: Maximum allowed duration in seconds
+        max_seconds: Maximum allowed duration in seconds (default 30.0)
         
     Returns:
         Tuple of (is_valid, duration_seconds)
@@ -80,7 +80,7 @@ def check_audio_duration_limit(audio_path: str, max_seconds: float = 15.0) -> tu
 def _concatenate_audio_files_sync(
     audio_paths: List[str], 
     output_path: str,
-    pause_duration_ms: int = 400
+    pause_duration_ms: int = 130
 ) -> str:
     """
     Synchronously concatenate multiple audio files with pauses between them.
@@ -88,7 +88,7 @@ def _concatenate_audio_files_sync(
     Args:
         audio_paths: List of paths to audio files (in order)
         output_path: Path to save the concatenated result
-        pause_duration_ms: Duration of pause between segments (ms)
+        pause_duration_ms: Duration of pause between segments (default 130ms)
     
     Returns:
         Path to concatenated file
@@ -128,7 +128,7 @@ def _concatenate_audio_files_sync(
 async def concatenate_audio_files(
     audio_paths: List[str], 
     output_path: str,
-    pause_duration_ms: int = 400
+    pause_duration_ms: int = 130
 ) -> str:
     """
     Concatenate multiple audio files with pauses between them.
@@ -136,7 +136,7 @@ async def concatenate_audio_files(
     Args:
         audio_paths: List of paths to audio files (in order)
         output_path: Path to save the concatenated result
-        pause_duration_ms: Duration of pause between segments (ms)
+        pause_duration_ms: Duration of pause between segments (default 130ms)
     
     Returns:
         Path to concatenated file
