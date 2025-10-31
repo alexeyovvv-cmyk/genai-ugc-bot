@@ -46,19 +46,35 @@ def _enhance_prompt_sync(text: str) -> str:
         
         # Extract enhanced text from response
         logger.info(f"[ENHANCEMENT] Raw response type: {type(response)}")
-        logger.info(f"[ENHANCEMENT] Raw response: {response}")
         
-        # Try different ways to extract text
-        if hasattr(response, 'text'):
-            enhanced_text = response.text
-        elif hasattr(response, 'output'):
-            enhanced_text = response.output
-        elif hasattr(response, 'content'):
-            enhanced_text = response.content
-        elif isinstance(response, dict):
-            enhanced_text = response.get('text') or response.get('output') or response.get('content') or str(response)
-        else:
-            enhanced_text = str(response)
+        # Response structure: response.output[1].content[0].text
+        # output[0] = reasoning, output[1] = assistant message
+        try:
+            # Navigate through the response structure
+            if hasattr(response, 'output') and response.output:
+                # Find the assistant message (skip reasoning items)
+                for output_item in response.output:
+                    if hasattr(output_item, 'role') and output_item.role == 'assistant':
+                        if hasattr(output_item, 'content') and output_item.content:
+                            # Get the text from first content item
+                            first_content = output_item.content[0]
+                            if hasattr(first_content, 'text'):
+                                enhanced_text = first_content.text
+                                break
+                else:
+                    # Fallback: try last output item
+                    last_output = response.output[-1]
+                    if hasattr(last_output, 'content') and last_output.content:
+                        enhanced_text = last_output.content[0].text
+                    else:
+                        raise ValueError("Could not find text in response.output")
+            else:
+                raise ValueError("Response has no output field")
+                
+        except Exception as extract_error:
+            logger.error(f"[ENHANCEMENT] Failed to extract text: {extract_error}")
+            logger.error(f"[ENHANCEMENT] Full response: {response}")
+            raise ValueError(f"Failed to extract enhanced text from OpenAI response: {extract_error}")
         
         logger.info(f"[ENHANCEMENT] Enhanced result: {enhanced_text}")
         
