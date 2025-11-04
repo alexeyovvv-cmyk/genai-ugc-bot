@@ -29,6 +29,12 @@ import re
 import assemble
 import prepare_overlay
 
+# Import new utility modules
+from common.media.meta import MediaMeta, run_ffprobe_meta as run_ffprobe_meta_new, decide_fit as decide_fit_new, sniff_remote_media_type
+from render.templates.spec_editor import load_spec as load_spec_new, save_spec as save_spec_new, ensure_background as ensure_background_new, get_node as get_node_new, update_nodes as update_nodes_new
+from render.timeline.blocks import load_blocks_config as load_blocks_config_new, apply_blocks as apply_blocks_new
+from render.subtitle import subtitle_tools
+
 # Настройка логгера
 logging.basicConfig(
     level=logging.INFO,
@@ -135,6 +141,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--blocks-config",
+        default="render/timeline/config/blocks.json",
         help="JSON с описанием дополнительных блоков (append_clips/append_overlays) по сценариям.",
     )
     parser.add_argument(
@@ -170,6 +177,25 @@ def parse_args() -> argparse.Namespace:
         "--outro-templates",
         help="Список шаблонов для аутро (через запятую). По умолчанию — все выбранные сценарии.",
     )
+    parser.add_argument(
+        "--background-video-length",
+        choices=["auto", "fixed"],
+        default="auto",
+        help="Поведение для видеофона: auto — подогнать длительность под голову, fixed — оставить как в исходнике.",
+    )
+    parser.add_argument(
+        "--subtitle-theme",
+        choices=["light", "yellow_on_black"],
+        default="light",
+        help="Цветовая схема субтитров: light (по умолчанию) или yellow_on_black.",
+    )
+    parser.add_argument(
+        "--no-circle-auto-center",
+        action="store_false",
+        dest="circle_auto_center",
+        help="Отключить авто-центровку круга и использовать заданные вручную координаты.",
+    )
+    parser.set_defaults(circle_auto_center=True)
     return parser.parse_args()
 
 
@@ -185,28 +211,28 @@ TemplateName = str
 
 TEMPLATE_REGISTRY: Dict[TemplateName, Dict[str, object]] = {
     "overlay": {
-        "file": "talking_head_overlay.json",
+        "file": "render/templates/presets/talking_head_overlay.json",
         "background_nodes": [("clips", 0)],
         "overlay_nodes": {"rect": [("overlays", 0)]},
     },
     "circle": {
-        "file": "talking_head_circle.json",
+        "file": "render/templates/presets/talking_head_circle.json",
         "background_nodes": [("clips", 0)],
         "overlay_nodes": {"circle": [("overlays", 0)]},
     },
     "basic": {
-        "file": "talking_head_basic.json",
+        "file": "render/templates/presets/talking_head_basic.json",
         "head_nodes": [("clips", 0), ("clips", 1)],
         "background_nodes": [("overlays", 0)],
     },
     "mix_basic_overlay": {
-        "file": "talking_head_mix_basic_overlay.json",
+        "file": "render/templates/presets/talking_head_mix_basic_overlay.json",
         "head_nodes": [("clips", 0), ("clips", 1)],
         "background_nodes": [("overlays", 1)],
         "overlay_nodes": {"rect": [("overlays", 0)]},
     },
     "mix_basic_circle": {
-        "file": "talking_head_mix_basic_circle.json",
+        "file": "render/templates/presets/talking_head_mix_basic_circle.json",
         "head_nodes": [("clips", 0), ("clips", 1)],
         "background_nodes": [("overlays", 1)],
         "overlay_nodes": {"circle": [("overlays", 0)]},

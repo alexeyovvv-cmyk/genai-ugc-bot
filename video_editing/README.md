@@ -6,7 +6,8 @@
 - `prepare_overlay.py` — вырезает говорящую голову с альфой и загружает в Shotstack ingest.
 - `assemble.py` — отправляет любой JSON-теймлайн в Shotstack (ручной режим).
 - `autopipeline.py` — «одна кнопка»: качает ассеты, вырезает голову, строит субтитры, применяет блоки, обновляет шаблоны и (по желанию) рендерит видео.
-- `talking_head_*.json` — базовые шаблоны пяти сценариев (overlay, circle, basic, mix_overlay, mix_circle). В каждом есть заготовка из трёх субтитров, позиция головы и фон.
+- `render/templates/presets/talking_head_*.json` — базовые шаблоны пяти сценариев (overlay, circle, basic, mix_overlay, mix_circle). В каждом есть заготовка из трёх субтитров, позиция головы и фон.
+- `render/timeline/config/blocks.json` — конфигурация дополнительных блоков для интро/аутро и оверлеев.
 - `build/` — сюда автопайплайн складывает сгенерированные спецификации (папка под каждую запускную сессию).
 
 ## Быстрый старт
@@ -48,22 +49,28 @@ python3 autopipeline.py \
   [--subtitles subtitles.json] \
   [--transcript "текст" | --transcript-file text.txt] \
   [--subtitles-enabled auto|manual|none] \
-  [--blocks-config blocks.json] \
+  [--blocks-config render/timeline/config/blocks.json] \
   [--intro-url "<intro.mp4>" --intro-length 2.5 --intro-templates overlay,circle] \
   [--outro-url "<outro.mp4>" --outro-length 2.5 --outro-templates overlay,circle] \
   [--templates overlay,circle,...] \
+  [--background-video-length auto|fixed] \
+  [--subtitle-theme light|yellow_on_black] \
+  [--no-circle-auto-center] \
   [--no-render]
 ```
 
 ### Что делает скрипт
-- скачивает фон и голову;
-- генерирует прямоугольный/круглый оверлей (rembg) и заливает в Shotstack;
-- подстраивает длительность фона (speed);
+- скачивает фон и голову, анализирует через ffprobe и определяет `fit` (cover/contain) и тип (image/video);
+- генерирует прямоугольный/круглый оверлей (rembg) с автоматической центровкой круга по маске (если не указан `--no-circle-auto-center`);
+- подстраивает длительность фона:
+  - `--background-video-length auto` (по умолчанию): подгоняет под голову через speed
+  - `--background-video-length fixed`: оставляет оригинальную длительность фона
 - **субтитры**:
   - `--subtitles-enabled auto` (по умолчанию): берёт `--subtitles`, иначе строит по `--transcript` через `ffmpeg silencedetect`; если ни того ни другого — подставляет дефолтные три реплики;
   - `manual`: использовать только `--subtitles`, иначе блок удаляется;
   - `none`: в итоговых шаблонах субтитров не будет;
-- применяет `blocks.json` (опциональные блоки: интро, аутро, дополнительные оверлеи) и/или параметры `--intro-*`/`--outro-*` (можно настроить на лету без отдельного файла);
+  - выбор темы через `--subtitle-theme light|yellow_on_black`;
+- применяет `render/timeline/config/blocks.json` (опциональные блоки: интро, аутро, дополнительные оверлеи) и/или параметры `--intro-*`/`--outro-*` (можно настроить на лету без отдельного файла);
 - сохраняет готовые спецификации в `build/auto_*`;
 - без `--no-render` сразу отправляет их в Shotstack и печатает ссылки на mp4.
 
