@@ -42,7 +42,7 @@ image = (
         "requests==2.31.0",
         "pillow==10.1.0",
     )
-    .add_local_dir("./video_editing", remote_path="/root/video_editing")
+    .add_local_dir("../video_editing", remote_path="/root/video_editing")
 )
 
 
@@ -70,6 +70,7 @@ def process_overlay(
     circle_radius: float = 0.35,
     circle_center_x: float = 0.5,
     circle_center_y: float = 0.5,
+    circle_auto_center: bool = True,
 ) -> dict:
     """
     Process video overlay on GPU: remove background and create transparent overlay.
@@ -83,6 +84,7 @@ def process_overlay(
         rembg_model: rembg model name (if engine="rembg")
         shape: "rect" or "circle"
         circle_*: circle mask parameters
+        circle_auto_center: auto-detect circle center and radius from mask (default: True)
         
     Returns:
         dict with:
@@ -129,6 +131,7 @@ def process_overlay(
                 circle_radius=circle_radius,
                 circle_center_x=circle_center_x,
                 circle_center_y=circle_center_y,
+                circle_auto_center=circle_auto_center,
             )
             
             processing_time = time.time() - start_time

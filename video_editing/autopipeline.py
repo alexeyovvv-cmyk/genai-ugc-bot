@@ -639,6 +639,7 @@ def generate_overlay_urls_modal(
     circle_radius: float,
     circle_center_x: float,
     circle_center_y: float,
+    circle_auto_center: bool,
 ) -> Dict[str, str]:
     """
     Generate overlay URLs using Modal GPU service.
@@ -691,6 +692,7 @@ def generate_overlay_urls_modal(
                 circle_radius=circle_radius,
                 circle_center_x=circle_center_x,
                 circle_center_y=circle_center_y,
+                circle_auto_center=circle_auto_center,
                 # Additional prepare_overlay parameters
                 threshold=0.6,
                 feather=7,
@@ -774,6 +776,7 @@ def generate_overlay_urls(
             circle_radius=circle_radius,
             circle_center_x=circle_center_x,
             circle_center_y=circle_center_y,
+            circle_auto_center=getattr(args, 'circle_auto_center', True),
         )
     
     # Fallback to local CPU processing
