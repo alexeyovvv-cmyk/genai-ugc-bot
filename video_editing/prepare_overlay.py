@@ -98,12 +98,14 @@ def build_alpha_clip(
     circle_radius: float,
     circle_center_x: float,
     circle_center_y: float,
+    circle_auto_center: bool,
 ) -> float:
     cap = cv2.VideoCapture(str(source_path))
     fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
 
     segmentation: Optional[mp.solutions.selfie_segmentation.SelfieSegmentation] = None
     rembg_session = None
+    face_detection: Optional[mp.solutions.face_detection.FaceDetection] = None
     if engine == "mediapipe":
         segmentation = mp.solutions.selfie_segmentation.SelfieSegmentation(model_selection=1)
     elif engine == "rembg":
@@ -112,6 +114,9 @@ def build_alpha_clip(
         rembg_session = new_session(model_name=rembg_model)
     else:
         raise ValueError(f"Unsupported engine: {engine}")
+
+    if shape == "circle" and circle_auto_center:
+        face_detection = mp.solutions.face_detection.FaceDetection(model_selection=0, min_detection_confidence=0.5)
 
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
     feather = max(0, feather)
@@ -122,8 +127,14 @@ def build_alpha_clip(
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     logger.info(f"[PREPARE_OVERLAY] 📊 Processing {total_frames} frames with {engine}")
     logger.info(f"[PREPARE_OVERLAY] 📊 Shape: {shape}, FPS: {fps:.1f}")
+    if shape == "circle" and circle_auto_center:
+        logger.info(f"[PREPARE_OVERLAY] 📊 Circle auto-centering: ENABLED")
     
     index = 0
+    running_cx: Optional[float] = None
+    running_cy: Optional[float] = None
+    running_radius: Optional[float] = None
+    coord_cache: Optional[Tuple[np.ndarray, np.ndarray]] = None
     last_progress_time = time.time()
     last_logged_percent = 0
     frame_start_time = time.time()
@@ -152,6 +163,23 @@ def build_alpha_clip(
             mask = np.asarray(mask_image, dtype=np.float32) / 255.0
 
         mask = np.clip(mask, 0.0, 1.0)
+        
+        face_params: Optional[Tuple[float, float, float]] = None
+        if face_detection is not None:
+            detection_result = face_detection.process(rgb)
+            if detection_result and detection_result.detections:
+                bbox = detection_result.detections[0].location_data.relative_bounding_box
+                x_min = max(0.0, bbox.xmin)
+                y_min = max(0.0, bbox.ymin)
+                box_width = max(0.0, bbox.width)
+                box_height = max(0.0, bbox.height)
+                if box_width > 0 and box_height > 0:
+                    cx_face = (x_min + box_width * 0.5) * (w := mask.shape[1])
+                    cy_face = (y_min + box_height * 0.5) * (h := mask.shape[0])
+                    radius_face = max(box_width, box_height) * min(h, w) * (0.55 * 2.5)
+                    face_params = (cx_face, cy_face, radius_face)
+
+        weights = mask
         binary = (mask >= threshold).astype(np.uint8)
         binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel, iterations=1)
         binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel, iterations=1)
@@ -162,9 +190,57 @@ def build_alpha_clip(
             alpha_float = cv2.GaussianBlur(alpha_float, (feather, feather), 0)
         if shape == "circle":
             h, w = alpha_float.shape
-            radius = max(0.0, min(1.0, circle_radius)) * float(min(w, h))
-            cx = np.clip(circle_center_x, 0.0, 1.0) * (w - 1)
-            cy = np.clip(circle_center_y, 0.0, 1.0) * (h - 1)
+            min_dim = float(min(w, h))
+            if circle_auto_center:
+                if face_params is not None:
+                    cx_frame, cy_frame, radius_px_frame = face_params
+                else:
+                    if coord_cache is None or coord_cache[0].shape != alpha_float.shape:
+                        ys_coords, xs_coords = np.indices(alpha_float.shape, dtype=np.float32)
+                        coord_cache = (ys_coords, xs_coords)
+                    else:
+                        ys_coords, xs_coords = coord_cache
+
+                    total_weight = float(weights.sum())
+                    if total_weight > 0.0:
+                        cx_frame = float((weights * xs_coords).sum() / total_weight)
+                        cy_frame = float((weights * ys_coords).sum() / total_weight)
+
+                        mask_binary = weights > 0.25
+                        if mask_binary.any():
+                            cols = np.where(np.any(mask_binary, axis=0))[0]
+                            rows = np.where(np.any(mask_binary, axis=1))[0]
+                            if cols.size and rows.size:
+                                width_span = float(cols[-1] - cols[0])
+                                height_span = float(rows[-1] - rows[0])
+                                radius_px_frame = min(width_span, height_span) * 0.5
+                            else:
+                                radius_px_frame = min_dim * max(circle_radius, 0.25)
+                        else:
+                            radius_px_frame = min_dim * max(circle_radius, 0.25)
+                    else:
+                        cx_frame = np.clip(circle_center_x, 0.0, 1.0) * (w - 1)
+                        cy_frame = np.clip(circle_center_y, 0.0, 1.0) * (h - 1)
+                        radius_px_frame = min_dim * max(circle_radius, 0.25)
+
+                if running_cx is None:
+                    running_cx = cx_frame
+                    running_cy = cy_frame
+                    running_radius = radius_px_frame
+                else:
+                    smooth = 0.2
+                    running_cx = running_cx * (1 - smooth) + cx_frame * smooth
+                    running_cy = running_cy * (1 - smooth) + cy_frame * smooth
+                    running_radius = running_radius * (1 - smooth) + radius_px_frame * smooth
+
+                cx = float(np.clip(running_cx, 0.0, w - 1))
+                cy = float(np.clip(running_cy, 0.0, h - 1))
+                radius = float(np.clip(running_radius, min_dim * 0.18, min_dim * 0.65))
+            else:
+                radius = max(0.0, min(1.0, circle_radius)) * min_dim
+                cx = np.clip(circle_center_x, 0.0, 1.0) * (w - 1)
+                cy = np.clip(circle_center_y, 0.0, 1.0) * (h - 1)
+
             yy, xx = np.ogrid[:h, :w]
             circle_mask = ((xx - cx) ** 2 + (yy - cy) ** 2) <= radius ** 2
             alpha_float = alpha_float * circle_mask.astype(np.float32)
@@ -199,6 +275,8 @@ def build_alpha_clip(
 
     if segmentation is not None:
         segmentation.close()
+    if face_detection is not None:
+        face_detection.close()
     cap.release()
 
     if index == 0:
@@ -356,6 +434,7 @@ def prepare_overlay(
     circle_radius: float,
     circle_center_x: float,
     circle_center_y: float,
+    circle_auto_center: bool = True,
 ) -> str:
     overall_start = time.time()
     logger.info(f"[PREPARE_OVERLAY] ▶️ Starting overlay preparation")
@@ -395,6 +474,7 @@ def prepare_overlay(
             circle_radius,
             circle_center_x,
             circle_center_y,
+            circle_auto_center,
         )
         alpha_duration = time.time() - alpha_start
         logger.info(f"[PREPARE_OVERLAY] ⏱️ Alpha clip built in {alpha_duration:.2f}s")
@@ -525,6 +605,13 @@ def parse_args() -> argparse.Namespace:
         default=float(os.getenv("OVERLAY_CIRCLE_CENTER_Y", "0.5")),
         help="Вертикальный центр круга (0-1, доля высоты, default: 0.5).",
     )
+    parser.add_argument(
+        "--no-circle-auto-center",
+        action="store_false",
+        dest="circle_auto_center",
+        help="Отключить автоматическое определение центра круга по маске (по умолчанию включено).",
+    )
+    parser.set_defaults(circle_auto_center=True)
     return parser.parse_args()
 
 
@@ -564,6 +651,7 @@ def main() -> None:
             circle_radius=args.circle_radius,
             circle_center_x=args.circle_center_x,
             circle_center_y=args.circle_center_y,
+            circle_auto_center=args.circle_auto_center,
         )
     except Exception as exc:
         print(f"Error: {exc}", file=sys.stderr)

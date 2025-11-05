@@ -74,14 +74,14 @@ python3 autopipeline.py \
 - сохраняет готовые спецификации в `build/auto_*`;
 - без `--no-render` сразу отправляет их в Shotstack и печатает ссылки на mp4.
 
-### Пример `blocks.json`
+### Пример структуры `blocks.json`
 ```json
 {
   "overlay": {
     "prepend_clips": [
       {
         "type": "video",
-        "src": "https://example.com/brand-intro.mp4",
+        "src": "<URL вашего интро>",
         "length": 2.5,
         "fit": "contain",
         "transition": "fade"
@@ -90,7 +90,7 @@ python3 autopipeline.py \
     "append_clips": [
       {
         "type": "video",
-        "src": "https://example.com/brand-outro.mp4",
+        "src": "<URL вашего аутро>",
         "length": 2.5,
         "fit": "contain",
         "transition": "fade"
@@ -99,20 +99,23 @@ python3 autopipeline.py \
   }
 }
 ```
+**Примечание**: Это просто пример структуры. Замените `<URL вашего интро>` и `<URL вашего аутро>` на реальные ссылки на ваши файлы.
+
 Можно добавить секции для `circle`, `basic`, `mix_basic_overlay`, `mix_basic_circle`, а также `append_overlays` (доп. слои поверх).
 
 Чтобы не хранить файл, можно передать интро/аутро прямо в командной строке:
 
 ```bash
 python3 autopipeline.py ... \
-  --intro-url "https://example.com/intro.mp4" --intro-length 2.0 --intro-templates mix_basic_circle \
-  --outro-url "https://example.com/outro.mp4" --outro-length 3.0
+  --intro-url "<URL вашего интро>" --intro-length 2.0 --intro-templates mix_basic_circle \
+  --outro-url "<URL вашего аутро>" --outro-length 3.0
 ```
 
 Если нужен только интро (без аутро) — просто опусти `--outro-*` (и наоборот).
 
 ## Особенности
 
+- **Автоматическая центровка круга**: по умолчанию для `circle`-шаблонов центр и радиус круга определяются автоматически по маске лица (через MediaPipe Face Detection) или по центру масс маски. Это обеспечивает идеальное позиционирование головы в круге. Для ручного управления используй `--no-circle-auto-center`.
 - Автоматические субтитры рендерятся шрифтом **Helvetica Neue / Helvetica / Arial**, белый текст на полупрозрачном чёрном фоне (`rgba(0,0,0,0.75)`), тень добавлена.
 - Голова в mix-сценариях: первые 3 секунды — fullscreen, дальше звук остаётся, а видео прячется за кадром (`scale 0.001`), фон идёт в `contain`.
 - Бот/CLI может собирать сценарий «под ключ», пользователю достаточно дать две ссылки (фон + голова), текст или файл субтитров и выбрать пресет/блоки. Всё остальное делает `autopipeline.py`.

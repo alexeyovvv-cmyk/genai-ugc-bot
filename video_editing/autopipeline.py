@@ -810,6 +810,7 @@ def generate_overlay_urls(
                 circle_radius=circle_radius,
                 circle_center_x=circle_center_x,
                 circle_center_y=circle_center_y,
+                circle_auto_center=getattr(args, 'circle_auto_center', True),
             )
             urls[shape] = overlay_url
     return urls
