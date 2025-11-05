@@ -160,13 +160,6 @@ def back_to_main_menu():
         [InlineKeyboardButton(text="⬅️ Вернуться в главное меню", callback_data="back_to_main")]
     ])
 
-def audio_confirmation_menu():
-    """Меню подтверждения аудио после прослушивания"""
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🎬 Начать генерацию видео", callback_data="audio_confirmed")],
-        [InlineKeyboardButton(text="🔄 Переделать аудио", callback_data="audio_redo")],
-        [InlineKeyboardButton(text="🎤 Выбрать другой голос", callback_data="change_voice")],
-    ])
 
 def text_change_decision_menu():
     """Меню выбора: менять текст или нет"""
@@ -266,9 +259,3 @@ def video_editing_menu():
         [InlineKeyboardButton(text="✅ Завершить", callback_data="finish_generation")],
     ])
 
-def segment_confirmation_menu():
-    """Меню подтверждения эмоциональной разбивки текста"""
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Подтвердить", callback_data="confirm_segments")],
-        [InlineKeyboardButton(text="❌ Отменить", callback_data="cancel_segments")]
-    ])

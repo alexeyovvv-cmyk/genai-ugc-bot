@@ -120,3 +120,5 @@ def sniff_remote_media_type(url: str, *, error_cls: Type[Exception] = RuntimeErr
     # Default to video if unknown
     return "video"
 
+
+
