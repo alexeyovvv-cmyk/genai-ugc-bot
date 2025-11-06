@@ -25,7 +25,8 @@ from tg_bot.utils.user_state import (
     get_character_gender, get_character_age,
     get_original_character_path, get_edited_character_path,
     clear_edit_session,
-    set_original_video
+    set_original_video,
+    set_cached_overlay_urls
 )
 from tg_bot.utils.voice_mapping import get_voice_for_character, get_default_language, get_default_emotion
 from tg_bot.utils.files import get_character_image
@@ -247,6 +248,9 @@ async def character_text_received(m: Message, state: FSMContext):
             video_path = video_result['local_path']
             video_url = video_result.get('video_url')
             r2_video_key = video_result.get('r2_video_key')
+            
+            # Очищаем кеш оверлеев при генерации нового видео
+            set_cached_overlay_urls(m.from_user.id, {}, {})
             
             logger.info(f"[UGC] Видео сгенерировано успешно")
             
