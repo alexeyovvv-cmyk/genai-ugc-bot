@@ -1,2 +1,102 @@
 {
+  "mix_basic_circle": {
+    "prepend_clips": [
+      {
+        "type": "video",
+        "src": "https://drive.google.com/uc?id=1GWF-hqFCbvKHKwT8y-NCU7tojIc0vTaT&export=download",
+        "length": 2.5,
+        "fit": "contain",
+        "transition": "fade"
+      }
+    ],
+    "append_clips": [
+      {
+        "type": "video",
+        "src": "https://drive.google.com/uc?id=1GWF-hqFCbvKHKwT8y-NCU7tojIc0vTaT&export=download",
+        "length": 2.5,
+        "fit": "contain",
+        "transition": "fade"
+      }
+    ]
+  },
+  "overlay": {
+    "prepend_clips": [
+      {
+        "type": "video",
+        "src": "https://drive.google.com/uc?id=1GWF-hqFCbvKHKwT8y-NCU7tojIc0vTaT&export=download",
+        "length": 2.5,
+        "fit": "contain",
+        "transition": "fade"
+      }
+    ],
+    "append_clips": [
+      {
+        "type": "video",
+        "src": "https://drive.google.com/uc?id=1GWF-hqFCbvKHKwT8y-NCU7tojIc0vTaT&export=download",
+        "length": 2.5,
+        "fit": "contain",
+        "transition": "fade"
+      }
+    ]
+  },
+  "circle": {
+    "prepend_clips": [
+      {
+        "type": "video",
+        "src": "https://drive.google.com/uc?id=1GWF-hqFCbvKHKwT8y-NCU7tojIc0vTaT&export=download",
+        "length": 2.5,
+        "fit": "contain",
+        "transition": "fade"
+      }
+    ],
+    "append_clips": [
+      {
+        "type": "video",
+        "src": "https://drive.google.com/uc?id=1GWF-hqFCbvKHKwT8y-NCU7tojIc0vTaT&export=download",
+        "length": 2.5,
+        "fit": "contain",
+        "transition": "fade"
+      }
+    ]
+  },
+  "basic": {
+    "prepend_clips": [
+      {
+        "type": "video",
+        "src": "https://drive.google.com/uc?id=1GWF-hqFCbvKHKwT8y-NCU7tojIc0vTaT&export=download",
+        "length": 2.5,
+        "fit": "contain",
+        "transition": "fade"
+      }
+    ],
+    "append_clips": [
+      {
+        "type": "video",
+        "src": "https://drive.google.com/uc?id=1GWF-hqFCbvKHKwT8y-NCU7tojIc0vTaT&export=download",
+        "length": 2.5,
+        "fit": "contain",
+        "transition": "fade"
+      }
+    ]
+  },
+  "mix_basic_overlay": {
+    "prepend_clips": [
+      {
+        "type": "video",
+        "src": "https://drive.google.com/uc?id=1GWF-hqFCbvKHKwT8y-NCU7tojIc0vTaT&export=download",
+        "length": 2.5,
+        "fit": "contain",
+        "transition": "fade"
+      }
+    ],
+    "append_clips": [
+      {
+        "type": "video",
+        "src": "https://drive.google.com/uc?id=1GWF-hqFCbvKHKwT8y-NCU7tojIc0vTaT&export=download",
+        "length": 2.5,
+        "fit": "contain",
+        "transition": "fade"
+      }
+    ]
+  }
 }

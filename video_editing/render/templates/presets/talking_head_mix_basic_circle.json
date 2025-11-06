@@ -31,11 +31,11 @@
       "start": 3.0,
       "trim": 3.0,
       "fit": "contain",
-      "scale": 0.5,
-      "position": "topLeft",
+      "scale": 0.3,
+      "position": "center",
       "offset": {
-        "x": -0.05,
-        "y": -0.02
+        "x": -0.32,
+        "y": 0.32
       },
       "transition": "fade",
       "volume": 0,
