@@ -22,7 +22,8 @@ from tg_bot.utils.user_state import (
     clear_all_video_data,
     get_video_format,
     get_background_video_path,
-    get_character_text
+    get_character_text,
+    set_cached_overlay_urls
 )
 from tg_bot.services.video_editing_service import (
     add_subtitles_to_video,
@@ -70,6 +71,37 @@ async def resume_editing_command(m: Message, state: FSMContext):
     # Устанавливаем состояние
     await state.set_state(UGCCreation.waiting_editing_decision)
     logger.info(f"User {m.from_user.id} resumed editing session via /resume command")
+
+
+@dp.message(Command("overlay"))
+async def regenerate_overlay_command(m: Message, state: FSMContext):
+    """Команда для перегенерации оверлея с новыми параметрами"""
+    # Проверяем, есть ли сохраненное видео
+    video_data = get_original_video(m.from_user.id)
+    
+    if not video_data or not video_data.get('r2_key'):
+        await m.answer(
+            "❌ Нет сохраненного видео для перегенерации оверлея.\n\n"
+            "Создайте новое видео:",
+            reply_markup=main_menu()
+        )
+        return
+    
+    # Очищаем кеш оверлеев, чтобы они сгенерировались заново
+    set_cached_overlay_urls(m.from_user.id, {}, {})
+    logger.info(f"User {m.from_user.id} cleared overlay cache via /overlay command")
+    
+    # Предлагаем начать монтаж с новым оверлеем
+    await m.answer(
+        "✅ Кеш оверлеев очищен!\n\n"
+        "Теперь при монтаже будет создан новый оверлей.\n"
+        "Хочешь начать монтаж?",
+        reply_markup=video_editing_menu()
+    )
+    
+    # Устанавливаем состояние
+    await state.set_state(UGCCreation.waiting_editing_decision)
+    logger.info(f"User {m.from_user.id} ready to regenerate overlay")
 
 
 @dp.callback_query(F.data == "start_video_editing", StateFilter(UGCCreation.waiting_editing_decision))

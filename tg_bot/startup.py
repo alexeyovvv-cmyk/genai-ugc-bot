@@ -5,9 +5,11 @@ This module contains all startup logic including:
 - Migrations
 - R2 lifecycle configuration
 - Statistics display
+- Bot commands registration
 """
 
 from aiogram import Bot
+from aiogram.types import BotCommand
 from tg_bot.db import engine
 from tg_bot.models import Base
 from tg_bot.utils.logger import setup_logger
@@ -131,6 +133,18 @@ async def setup_startup(bot: Bot):
             configure_temp_edits_lifecycle()
         except Exception as e:
             logger.warning(f"R2 lifecycle configuration skipped: {e}")
+        
+        # Register bot commands
+        try:
+            commands = [
+                BotCommand(command="start", description="Начать работу с ботом"),
+                BotCommand(command="resume", description="Возобновить незавершенный монтаж"),
+                BotCommand(command="overlay", description="Перегенерировать оверлей"),
+            ]
+            await bot.set_my_commands(commands)
+            logger.info("✅ Bot commands registered successfully")
+        except Exception as e:
+            logger.warning(f"Bot commands registration skipped: {e}")
 
     except Exception as e:
         logger.error(f"Error creating database tables: {e}")
