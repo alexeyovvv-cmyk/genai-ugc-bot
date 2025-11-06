@@ -1,27 +1,24 @@
+"""
+Utilities for working with subtitles and speech alignment.
+
+The helpers defined here are intentionally free of project-specific
+dependencies so that higher level modules (e.g. autopipeline) can
+provide their own exception types via the ``error_cls`` parameter.
+"""
 from __future__ import annotations
 
 import json
 import re
 import subprocess
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Type
+from typing import Dict, List, Optional, Tuple, Type
 
 
-def read_transcript(
-    transcript_arg: Optional[str],
-    transcript_file_arg: Optional[str],
-    *,
-    error_cls: Type[Exception] = RuntimeError,
-) -> Optional[str]:
-    """Read transcript from argument or file."""
-    if transcript_file_arg:
-        try:
-            return Path(transcript_file_arg).read_text(encoding="utf-8")
-        except OSError as exc:
-            raise error_cls(f"Не удалось прочитать файл транскрипта {transcript_file_arg}: {exc}") from exc
-    if transcript_arg:
-        return transcript_arg
-    return None
+def _error(exc: BaseException, error_cls: Type[Exception]) -> Exception:
+    """Wrap an exception into the provided error type."""
+    if isinstance(exc, error_cls):
+        return exc
+    return error_cls(str(exc))
 
 
 def load_subtitles(
@@ -29,7 +26,7 @@ def load_subtitles(
     *,
     error_cls: Type[Exception] = RuntimeError,
 ) -> List[Dict[str, object]]:
-    """Load subtitles from JSON file."""
+    """Load subtitles from JSON file into Shotstack-compatible structure."""
     try:
         with open(path, encoding="utf-8") as handle:
             data = json.load(handle)
@@ -94,6 +91,23 @@ def load_subtitles(
     return subtitles
 
 
+def read_transcript(
+    transcript: Optional[str],
+    transcript_file: Optional[str],
+    *,
+    error_cls: Type[Exception] = RuntimeError,
+) -> Optional[str]:
+    """Return transcript text either from CLI string or a referenced file."""
+    if transcript_file:
+        try:
+            return Path(transcript_file).read_text(encoding="utf-8")
+        except OSError as exc:
+            raise error_cls(f"Не удалось прочитать файл транскрипта {transcript_file}: {exc}") from exc
+    if transcript:
+        return transcript
+    return None
+
+
 def detect_speech_segments(
     media_path: Path,
     duration: float,
@@ -103,7 +117,7 @@ def detect_speech_segments(
     min_silence_duration: float = 0.35,
     min_segment_duration: float = 0.3,
 ) -> List[Tuple[float, float]]:
-    """Detect speech segments using ffmpeg silencedetect."""
+    """Detect speech segments via ffmpeg silencedetect."""
     command = [
         "ffmpeg",
         "-hide_banner",
@@ -152,7 +166,7 @@ def detect_speech_segments(
 
 
 def sentence_tokenize(text: str) -> List[str]:
-    """Tokenize text into sentences."""
+    """Split transcript into sentence-like chunks."""
     stripped = text.strip()
     if not stripped:
         return []
@@ -169,7 +183,7 @@ def align_transcript_to_segments(
     segments: List[Tuple[float, float]],
     total_duration: float,
 ) -> List[Dict[str, object]]:
-    """Align transcript text to detected speech segments."""
+    """Map transcript text to detected speech segments."""
     sentences = sentence_tokenize(transcript)
     if not sentences:
         return []
@@ -216,6 +230,3 @@ def align_transcript_to_segments(
         )
 
     return subtitles
-
-
-

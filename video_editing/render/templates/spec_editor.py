@@ -78,6 +78,3 @@ def update_nodes(
                 clip.pop("speed", None)
         if length is not None:
             clip["length"] = round(max(length, 0.1), 3)
-
-
-

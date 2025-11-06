@@ -121,6 +121,3 @@ def apply_blocks(
             if overlay.get("start") is None:
                 overlay["start"] = round(_track_end(overlays), 3)
             overlays.append(overlay)
-
-
-
