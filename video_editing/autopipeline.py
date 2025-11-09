@@ -31,8 +31,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--head-url", required=True, help="Ссылка на исходник говорящей головы.")
     parser.add_argument(
         "--templates",
-        default="overlay,circle,basic,mix_basic_overlay,mix_basic_circle",
-        help="Список шаблонов через запятую (overlay|circle|basic|mix_basic_overlay|mix_basic_circle).",
+        default="mix_basic_circle",
+        help="Список шаблонов через запятую (overlay|circle|basic|mix_basic_overlay|mix_basic_circle). По умолчанию рендерится mix_basic_circle.",
     )
     parser.add_argument(
         "--output-dir",

@@ -256,6 +256,27 @@ def video_editing_menu():
     """Меню выбора: монтаж или завершить"""
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🎬 Монтаж", callback_data="start_video_editing")],
+        [InlineKeyboardButton(text="⚙️ Настройки рендера", callback_data="render_edit:open")],
         [InlineKeyboardButton(text="✅ Завершить", callback_data="finish_generation")],
     ])
 
+
+def render_settings_menu():
+    """Меню настроек для повторного рендера"""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="🎯 Шаблоны", callback_data="render_edit:templates"),
+            InlineKeyboardButton(text="💬 Субтитры", callback_data="render_edit:subtitles"),
+        ],
+        [
+            InlineKeyboardButton(text="🎬 Интро", callback_data="render_edit:intro"),
+            InlineKeyboardButton(text="🏁 Аутро", callback_data="render_edit:outro"),
+        ],
+        [
+            InlineKeyboardButton(text="⭕ Circle", callback_data="render_edit:circle"),
+        ],
+        [
+            InlineKeyboardButton(text="🚀 Пересобрать", callback_data="render_edit:rerender"),
+            InlineKeyboardButton(text="❌ Отмена", callback_data="render_edit:cancel"),
+        ],
+    ])

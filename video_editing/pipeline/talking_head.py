@@ -67,6 +67,15 @@ TEMPLATE_REGISTRY: Dict[str, Dict[str, object]] = {
     },
 }
 
+MIX_TEMPLATES = {"mix_basic_overlay", "mix_basic_circle"}
+MIX_DEFAULT_LEAD_IN = 3.0
+MIX_LEAD_DISABLE_TOLERANCE = 0.5
+MIN_LEAD_IN_CLIP = 0.001
+MIN_CLIP_LENGTH = 0.1
+BACKGROUND_EQUAL_TOLERANCE = 0.5
+BACKGROUND_MAX_SPEED = 1.2
+BACKGROUND_TAIL_THRESHOLD = 15.0
+
 
 def parse_template_list(raw: Optional[str], default: Sequence[str]) -> List[str]:
     if raw is None:
@@ -234,6 +243,143 @@ class TalkingHeadPipeline:
                 shapes.update(overlay_nodes.keys())
         return shapes
 
+    def _determine_mix_lead_in(
+        self,
+        template: str,
+        head_duration: float,
+        background_meta: MediaMeta,
+    ) -> Optional[float]:
+        if template not in MIX_TEMPLATES or head_duration <= 0.0:
+            return None
+        bg_duration = background_meta.duration or 0.0
+        if (
+            background_meta.asset_type == "video"
+            and bg_duration > 0.0
+            and head_duration - bg_duration > MIX_LEAD_DISABLE_TOLERANCE
+        ):
+            print(
+                "Микс-шаблон: голова длиннее фона, пропускаем 3-секундный fullscreen старт."
+            )
+            return 0.0
+        lead_in = round(min(MIX_DEFAULT_LEAD_IN, head_duration), 3)
+        print(f"Микс-шаблон: аватар fullscreen первые {lead_in:.2f}s.")
+        return lead_in
+
+    def _apply_mix_lead_in_to_head_entries(
+        self,
+        head_entries: List[Dict[str, Any]],
+        lead_in: Optional[float],
+        head_duration: float,
+    ) -> None:
+        if lead_in is None or len(head_entries) < 2:
+            return
+        effective = max(min(lead_in, max(head_duration, 0.0)), 0.0)
+        first_clip = head_entries[0]
+        second_clip = head_entries[1]
+        intro_length = MIN_LEAD_IN_CLIP if effective <= 0.0 else effective
+        first_clip["length"] = round(intro_length, 3)
+        second_clip["start"] = round(intro_length, 3)
+        second_clip["trim"] = round(intro_length, 3)
+
+    def _apply_mix_lead_in_to_background_entries(
+        self,
+        background_entries: List[Dict[str, Any]],
+        lead_in: Optional[float],
+    ) -> None:
+        if lead_in is None:
+            return
+        for clip in background_entries:
+            start = _safe_float(clip.get("start", 0.0))
+            if abs(start - MIX_DEFAULT_LEAD_IN) <= 0.01:
+                clip["start"] = round(lead_in, 3)
+            trim_value = clip.get("trim")
+            if isinstance(trim_value, (int, float)) and abs(float(trim_value) - MIX_DEFAULT_LEAD_IN) <= 0.01:
+                clip["trim"] = round(lead_in, 3)
+
+    def _apply_mix_lead_in_to_talking_head_overlay(
+        self,
+        spec: Dict[str, Any],
+        lead_in: Optional[float],
+    ) -> None:
+        if lead_in is None:
+            return
+        overlays = spec.get("overlays", [])
+        for overlay in overlays:
+            if overlay.get("label") != "talking_head":
+                continue
+            start = _safe_float(overlay.get("start", 0.0))
+            if abs(start - MIX_DEFAULT_LEAD_IN) <= 0.01:
+                overlay["start"] = round(lead_in, 3)
+            trim_value = overlay.get("trim")
+            if isinstance(trim_value, (int, float)) and abs(float(trim_value) - MIX_DEFAULT_LEAD_IN) <= 0.01:
+                overlay["trim"] = round(lead_in, 3)
+
+    @staticmethod
+    def _set_clip_length(
+        clip: Dict[str, Any],
+        target_end: float,
+        *,
+        min_length: float = MIN_CLIP_LENGTH,
+    ) -> None:
+        start = _safe_float(clip.get("start", 0.0))
+        desired = max(target_end - start, 0.0)
+        length = min_length if desired <= 0.0 else max(desired, min_length)
+        clip["length"] = round(length, 3)
+        clip.pop("auto_length", None)
+        clip.pop("match_length_to", None)
+
+    def _retime_background_entries(
+        self,
+        background_entries: List[Dict[str, Any]],
+        head_duration: float,
+        background_meta: MediaMeta,
+    ) -> None:
+        if (
+            not background_entries
+            or self.background_video_mode != "auto"
+            or background_meta.asset_type != "video"
+        ):
+            return
+        bg_duration = background_meta.duration or 0.0
+        if bg_duration <= 0.0 or head_duration <= 0.0:
+            return
+        diff = bg_duration - head_duration
+        if abs(diff) <= BACKGROUND_EQUAL_TOLERANCE:
+            print("Фон и аватар практически одинаковой длины — скорость 1.0.")
+            for clip in background_entries:
+                clip.pop("speed", None)
+            return
+        if diff > 0.0:
+            ratio = bg_duration / head_duration
+            if ratio <= BACKGROUND_MAX_SPEED + 1e-3:
+                print(
+                    f"Фон длиннее на {diff:.1f}s: ускоряем до {ratio:.3f}x (<= {BACKGROUND_MAX_SPEED})."
+                )
+                for clip in background_entries:
+                    self._set_clip_length(clip, head_duration)
+                    clip["speed"] = round(ratio, 3)
+                return
+            if diff > BACKGROUND_TAIL_THRESHOLD:
+                print(
+                    f"Фон длиннее на {diff:.1f}s, ускорение {ratio:.3f}x > {BACKGROUND_MAX_SPEED}; отрезаем хвост."
+                )
+                for clip in background_entries:
+                    self._set_clip_length(clip, head_duration)
+                    clip.pop("speed", None)
+                return
+            print(
+                f"Фон длиннее на {diff:.1f}s, ускорение {ratio:.3f}x > {BACKGROUND_MAX_SPEED}, "
+                "но запас <= 15s — фон доигрывает после окончания головы."
+            )
+            for clip in background_entries:
+                clip.pop("speed", None)
+            return
+        print(
+            f"Аватар длиннее фона на {abs(diff):.1f}s — фон закончится раньше, изменений не требуется."
+        )
+        for clip in background_entries:
+            clip.pop("speed", None)
+
     def _generate_overlay_urls(self) -> Dict[str, str]:
         with timed_step("Генерация оверлеев"):
             return generate_overlay_urls(
@@ -382,6 +528,7 @@ class TalkingHeadPipeline:
         max_content_end = 0.0
 
         head_entries: List[Dict[str, Any]] = []
+        mix_lead_in: Optional[float] = None
         if config.get("head_nodes"):
             update_nodes(
                 spec,
@@ -397,6 +544,9 @@ class TalkingHeadPipeline:
                 head_max_end = _track_end(head_entries, head_duration)
                 if head_max_end > 0.0:
                     max_content_end = max(max_content_end, head_max_end)
+                mix_lead_in = self._determine_mix_lead_in(template, head_duration, background_meta)
+                if mix_lead_in is not None:
+                    self._apply_mix_lead_in_to_head_entries(head_entries, mix_lead_in, head_duration)
 
         background_entries: List[Dict[str, Any]] = []
         if config.get("background_nodes"):
@@ -412,6 +562,8 @@ class TalkingHeadPipeline:
                 clip = get_node(spec, path, error_cls=PipelineError)
                 background_entries.append(clip)
             if background_entries:
+                if mix_lead_in is not None:
+                    self._apply_mix_lead_in_to_background_entries(background_entries, mix_lead_in)
                 if background_meta.asset_type == "video" and self.background_video_mode == "fixed":
                     for clip in background_entries:
                         clip.pop("match_length_to", None)
@@ -419,6 +571,8 @@ class TalkingHeadPipeline:
                         clip.pop("speed", None)
                         length_value = max(background_meta.duration - _safe_float(clip.get("trim", 0.0)), 0.0)
                         clip["length"] = round(max(length_value, 0.1), 3)
+                elif background_meta.asset_type == "video":
+                    self._retime_background_entries(background_entries, head_duration, background_meta)
                 target_end = max_content_end if max_content_end > 0.0 else head_duration
                 if background_meta.asset_type == "video" and self.background_video_mode == "fixed":
                     target_end = max(
@@ -448,6 +602,8 @@ class TalkingHeadPipeline:
                     "contain",
                     error_cls=PipelineError,
                 )  # type: ignore[arg-type]
+        if mix_lead_in is not None:
+            self._apply_mix_lead_in_to_talking_head_overlay(spec, mix_lead_in)
 
         if fit_mode == "contain":
             ensure_background(spec, self.args.background_color)

@@ -2,7 +2,7 @@
 
 from typing import Optional
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-from sqlalchemy import String, Integer, DateTime, ForeignKey, JSON, func, BigInteger
+from sqlalchemy import String, Integer, DateTime, ForeignKey, JSON, func, BigInteger, Text
 
 class Base(DeclarativeBase): pass
 
@@ -95,3 +95,26 @@ class GenerationHistory(Base):
     text_prompt: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     credits_spent: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[DateTime] = mapped_column(DateTime, server_default=func.now())
+
+
+class RenderSession(Base):
+    __tablename__ = "render_sessions"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    scenario: Mapped[str] = mapped_column(String, default="composite")
+    head_r2_key: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    background_r2_key: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    templates: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    subtitle_settings: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    intro_settings: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    outro_settings: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    circle_settings: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    result_r2_key: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    result_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    shotstack_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    shotstack_render_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    status: Mapped[str] = mapped_column(String, default="pending")
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[DateTime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[DateTime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
