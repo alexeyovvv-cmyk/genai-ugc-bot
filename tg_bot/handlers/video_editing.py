@@ -10,6 +10,8 @@ This module handles:
 import copy
 import json
 import logging
+from typing import Sequence
+
 from aiogram import F
 from aiogram.types import CallbackQuery, Message
 from aiogram.fsm.context import FSMContext
