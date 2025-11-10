@@ -238,8 +238,8 @@ def build_alpha_clip(
                 radius = float(np.clip(running_radius, min_dim * 0.18, min_dim * 0.65))
             else:
                 radius = max(0.0, min(1.0, circle_radius)) * min_dim
-                cx = np.clip(circle_center_x, 0.0, 1.0) * (w - 1)
-                cy = np.clip(circle_center_y, 0.0, 1.0) * (h - 1)
+            cx = np.clip(circle_center_x, 0.0, 1.0) * (w - 1)
+            cy = np.clip(circle_center_y, 0.0, 1.0) * (h - 1)
 
             yy, xx = np.ogrid[:h, :w]
             circle_mask = ((xx - cx) ** 2 + (yy - cy) ** 2) <= radius ** 2

@@ -379,6 +379,7 @@ def set_cached_overlay_urls(tg_id: int, overlay_urls: dict, r2_keys: dict) -> No
     Args:
         tg_id: Telegram user ID
         overlay_urls: Dict with 'circle' and/or 'rect' keys mapping to Shotstack URLs
+                     Empty dict {} will clear all cached overlays
         r2_keys: Dict with 'circle' and/or 'rect' keys mapping to R2 keys
     """
     with SessionLocal() as db:
@@ -387,15 +388,25 @@ def set_cached_overlay_urls(tg_id: int, overlay_urls: dict, r2_keys: dict) -> No
             return
         state = _get_or_create_state(db, user.id)
         
-        if 'circle' in overlay_urls:
-            state.cached_overlay_circle_url = overlay_urls['circle']
-            state.cached_overlay_circle_r2_key = r2_keys.get('circle')
-        if 'rect' in overlay_urls:
-            state.cached_overlay_rect_url = overlay_urls['rect']
-            state.cached_overlay_rect_r2_key = r2_keys.get('rect')
+        # If empty dicts passed, clear all cached overlays
+        if not overlay_urls and not r2_keys:
+            state.cached_overlay_circle_url = None
+            state.cached_overlay_circle_r2_key = None
+            state.cached_overlay_rect_url = None
+            state.cached_overlay_rect_r2_key = None
+            state.overlay_cache_created_at = None
+        else:
+            # Update only specified shapes
+            if 'circle' in overlay_urls:
+                state.cached_overlay_circle_url = overlay_urls['circle']
+                state.cached_overlay_circle_r2_key = r2_keys.get('circle')
+            if 'rect' in overlay_urls:
+                state.cached_overlay_rect_url = overlay_urls['rect']
+                state.cached_overlay_rect_r2_key = r2_keys.get('rect')
+            
+            from datetime import datetime
+            state.overlay_cache_created_at = datetime.utcnow()
         
-        from datetime import datetime
-        state.overlay_cache_created_at = datetime.utcnow()
         db.commit()
 
 
