@@ -140,6 +140,9 @@ async def setup_startup(bot: Bot):
                 BotCommand(command="start", description="Начать работу с ботом"),
                 BotCommand(command="resume", description="Возобновить незавершенный монтаж"),
                 BotCommand(command="overlay", description="Перегенерировать оверлей"),
+                BotCommand(command="renderinfo", description="Показать параметры последнего рендера"),
+                BotCommand(command="editrender", description="Настроить и пересобрать видео"),
+                BotCommand(command="rerender", description="Пересобрать видео (JSON)"),
             ]
             await bot.set_my_commands(commands)
             logger.info("✅ Bot commands registered successfully")

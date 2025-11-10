@@ -32,6 +32,15 @@ class UGCCreation(StatesGroup):
     # Video editing states
     waiting_editing_decision = State()  # ждем выбор: монтаж или завершить
 
+class RenderEditing(StatesGroup):
+    """Состояния для тонкой настройки рендера перед повторной сборкой"""
+    choosing_action = State()
+    waiting_templates = State()
+    waiting_subtitles = State()
+    waiting_intro = State()
+    waiting_outro = State()
+    waiting_circle = State()
+
 class Feedback(StatesGroup):
     """Состояния для обратной связи"""
     waiting_message = State()

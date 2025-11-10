@@ -18,11 +18,11 @@
       "start": 0,
       "trim": 0,
       "fit": "contain",
-      "scale": 0.5,
-      "position": "topLeft",
+      "scale": 0.45,
+      "position": "center",
       "offset": {
-        "x": -0.05,
-        "y": -0.02
+        "x": -0.32,
+        "y": 0.32
       },
       "auto_length": true,
       "label": "talking_head"
