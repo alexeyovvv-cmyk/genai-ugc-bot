@@ -15,7 +15,7 @@ import re
 import tempfile
 import time
 from pathlib import Path
-from typing import Sequence
+from typing import Optional, Sequence
 
 from aiogram import F
 from aiogram.exceptions import TelegramBadRequest
