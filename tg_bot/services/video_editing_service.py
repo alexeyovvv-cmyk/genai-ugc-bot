@@ -36,6 +36,24 @@ SHOTSTACK_POLL_SECONDS = os.getenv("SHOTSTACK_POLL_SECONDS", "3")
 U2NET_CACHE_DIR = os.getenv("U2NET_HOME", "/tmp/.u2net")
 
 
+def _format_subprocess_failure(result: subprocess.CompletedProcess[str]) -> str:
+    def _tail(content: Optional[str]) -> str:
+        if not content:
+            return ""
+        text = content.strip()
+        max_len = 1500
+        return text[-max_len:]
+
+    stderr_tail = _tail(result.stderr)
+    stdout_tail = _tail(result.stdout)
+    parts: List[str] = []
+    if stderr_tail:
+        parts.append(f"STDERR tail:\n{stderr_tail}")
+    if stdout_tail:
+        parts.append(f"STDOUT tail:\n{stdout_tail}")
+    return "\n\n".join(parts) if parts else "No output captured."
+
+
 def _ensure_templates_list(templates: Optional[Sequence[str]]) -> Sequence[str]:
     items = [item.strip() for item in (templates or []) if item]
     return items or list(DEFAULT_TEMPLATES)
@@ -165,6 +183,10 @@ def _build_autopipeline_command(
     ]
     if not circle_settings.get("auto_center", True):
         cmd.append("--no-circle-auto-center")
+
+    rembg_model = os.getenv("REMBG_MODEL", "u2net_human_seg")
+    if rembg_model:
+        cmd += ["--rembg-model", rembg_model]
 
     return cmd
 
@@ -310,8 +332,9 @@ async def _render_composite_session(
                 logger.error(f"[MONTAGE] ❌ Autopipeline failed with exit code {result.returncode}")
                 logger.error(f"[MONTAGE] STDERR ({len(result.stderr)} chars): {result.stderr}")
                 logger.error(f"[MONTAGE] STDOUT ({len(result.stdout)} chars): {result.stdout}")
+                details = _format_subprocess_failure(result)
                 raise VideoEditingError(
-                    f"Autopipeline failed (exit code {result.returncode}): {result.stderr[:500]}"
+                    f"Autopipeline failed (exit code {result.returncode}). {details}"
                 )
 
             if result.stdout:
@@ -520,7 +543,10 @@ async def add_subtitles_to_video(
                 logger.error(f"[MONTAGE] ❌ Autopipeline failed with exit code {result.returncode}")
                 logger.error(f"[MONTAGE] STDERR ({len(result.stderr)} chars): {result.stderr}")
                 logger.error(f"[MONTAGE] STDOUT ({len(result.stdout)} chars): {result.stdout}")
-                raise VideoEditingError(f"Autopipeline failed (exit code {result.returncode}): {result.stderr[:500]}")
+                details = _format_subprocess_failure(result)
+                raise VideoEditingError(
+                    f"Autopipeline failed (exit code {result.returncode}). {details}"
+                )
             
             logger.info(f"[MONTAGE] ✅ Autopipeline completed successfully (exit code 0)")
             logger.info(f"[MONTAGE] 📊 Output: {len(result.stdout)} chars stdout, {len(result.stderr)} chars stderr")

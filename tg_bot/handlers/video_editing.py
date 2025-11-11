@@ -144,8 +144,8 @@ async def _send_render_settings_message(target_message: Message, overrides: dict
 
 
 def _video_menu_for_user(user_id: int):
-    has_session = get_render_session_summary(user_id) is not None
-    return video_editing_menu(has_session)
+    has_render = bool(get_last_generated_video(user_id))
+    return video_editing_menu(has_render)
 
 
 async def _start_render_editing_flow(msg_or_cb_message: Message, user_id: int, state: FSMContext) -> None:
