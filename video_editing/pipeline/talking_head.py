@@ -350,7 +350,7 @@ class TalkingHeadPipeline:
                 clip.pop("speed", None)
             return
         if diff > 0.0:
-            ratio = bg_duration / head_duration
+            ratio = max(1.0, bg_duration / head_duration)
             if ratio <= BACKGROUND_MAX_SPEED + 1e-3:
                 print(
                     f"Фон длиннее на {diff:.1f}s: ускоряем до {ratio:.3f}x (<= {BACKGROUND_MAX_SPEED})."
@@ -374,11 +374,23 @@ class TalkingHeadPipeline:
             for clip in background_entries:
                 clip.pop("speed", None)
             return
+        abs_diff = abs(diff)
         print(
-            f"Аватар длиннее фона на {abs(diff):.1f}s — фон закончится раньше, изменений не требуется."
+            f"Аватар длиннее фона на {abs_diff:.1f}s — выравниваем фон по окончанию головы."
         )
         for clip in background_entries:
             clip.pop("speed", None)
+            clip.pop("auto_length", None)
+            clip.pop("match_length_to", None)
+            trim = _safe_float(clip.get("trim", 0.0))
+            clip_length_value = clip.get("length")
+            if isinstance(clip_length_value, (int, float)) and clip_length_value > 0:
+                clip_length = float(clip_length_value)
+            else:
+                clip_length = max(bg_duration - trim, MIN_CLIP_LENGTH)
+            desired_start = max(head_duration - clip_length, 0.0)
+            clip["start"] = round(desired_start, 3)
+            clip["length"] = round(max(clip_length, MIN_CLIP_LENGTH), 3)
 
     def _generate_overlay_urls(self) -> Dict[str, str]:
         with timed_step("Генерация оверлеев"):

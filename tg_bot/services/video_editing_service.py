@@ -123,6 +123,9 @@ def _build_autopipeline_command(
     user_id: int,
     manual_subtitles_path: Optional[str],
 ) -> List[str]:
+    intro_settings = intro_settings or {}
+    outro_settings = outro_settings or {}
+
     cmd: List[str] = [
         sys.executable,
         str(AUTOPIPELINE_SCRIPT),
@@ -152,26 +155,44 @@ def _build_autopipeline_command(
     if theme:
         cmd += ["--subtitle-theme", theme]
 
-    if intro_settings.get("enabled") and intro_settings.get("url"):
+    def _resolve_clip_url(settings: Dict[str, Any], label: str) -> Optional[str]:
+        if not settings or not settings.get("enabled"):
+            return None
+        r2_key = settings.get("r2_key")
+        if r2_key:
+            url = get_presigned_url(r2_key, expiry_hours=1)
+            if not url:
+                raise VideoEditingError(f"Не удалось получить ссылку для {label}.")
+            return url
+        return settings.get("url")
+
+    intro_url = _resolve_clip_url(intro_settings, "интро")
+    if intro_url:
         intro_templates = _ensure_templates_list(intro_settings.get("templates") or templates)
         cmd += [
             "--intro-url",
-            intro_settings["url"],
+            intro_url,
             "--intro-length",
             str(intro_settings.get("length", 2.5)),
             "--intro-templates",
             ",".join(intro_templates),
         ]
-    if outro_settings.get("enabled") and outro_settings.get("url"):
+    elif intro_settings.get("enabled"):
+        raise VideoEditingError("Интро включено, но ссылка на клип недоступна.")
+
+    outro_url = _resolve_clip_url(outro_settings, "аутро")
+    if outro_url:
         outro_templates = _ensure_templates_list(outro_settings.get("templates") or templates)
         cmd += [
             "--outro-url",
-            outro_settings["url"],
+            outro_url,
             "--outro-length",
             str(outro_settings.get("length", 2.5)),
             "--outro-templates",
             ",".join(outro_templates),
         ]
+    elif outro_settings.get("enabled"):
+        raise VideoEditingError("Аутро включено, но ссылка на клип недоступна.")
 
     cmd += [
         "--circle-radius",

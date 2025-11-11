@@ -35,10 +35,10 @@ class UGCCreation(StatesGroup):
 class RenderEditing(StatesGroup):
     """Состояния для тонкой настройки рендера перед повторной сборкой"""
     choosing_action = State()
-    waiting_templates = State()
-    waiting_subtitles = State()
-    waiting_intro = State()
-    waiting_outro = State()
+    editing_templates = State()
+    editing_subtitles = State()
+    waiting_intro_upload = State()
+    waiting_outro_upload = State()
     waiting_circle = State()
 
 class Feedback(StatesGroup):
