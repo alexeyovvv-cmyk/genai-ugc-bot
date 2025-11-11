@@ -252,13 +252,13 @@ def format_selection_menu():
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")]
     ])
 
-def video_editing_menu():
-    """Меню выбора: монтаж или завершить"""
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🎬 Монтаж", callback_data="start_video_editing")],
-        [InlineKeyboardButton(text="⚙️ Настройки рендера", callback_data="render_edit:open")],
-        [InlineKeyboardButton(text="✅ Завершить", callback_data="finish_generation")],
-    ])
+def video_editing_menu(render_settings_available: bool = False):
+    """Меню выбора: монтаж или завершить (с настройками при наличии рендера)."""
+    rows = [[InlineKeyboardButton(text="🎬 Монтаж", callback_data="start_video_editing")]]
+    if render_settings_available:
+        rows.append([InlineKeyboardButton(text="⚙️ Настройки рендера", callback_data="render_edit:open")])
+    rows.append([InlineKeyboardButton(text="✅ Завершить", callback_data="finish_generation")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def render_settings_menu():

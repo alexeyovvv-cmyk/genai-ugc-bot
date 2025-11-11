@@ -10,6 +10,7 @@ This module handles:
 import copy
 import json
 import logging
+import re
 from typing import Sequence
 
 from aiogram import F
@@ -142,6 +143,11 @@ async def _send_render_settings_message(target_message: Message, overrides: dict
     await target_message.answer(text, reply_markup=render_settings_menu(), parse_mode="HTML")
 
 
+def _video_menu_for_user(user_id: int):
+    has_session = get_render_session_summary(user_id) is not None
+    return video_editing_menu(has_session)
+
+
 async def _start_render_editing_flow(msg_or_cb_message: Message, user_id: int, state: FSMContext) -> None:
     summary = get_render_session_summary(user_id)
     if not summary:
@@ -191,7 +197,7 @@ def _parse_clip_settings(
         raise ValueError("Длительность должна быть числом.") from exc
     templates = default_templates
     if len(parts) >= 3:
-        raw_templates = [item.strip() for item in parts[2].split(",") if item.strip()]
+        raw_templates = [item.strip() for item in re.split(r"[,\s]+", parts[2]) if item.strip()]
         valid_templates = [item for item in raw_templates if item in ALLOWED_TEMPLATES]
         if not valid_templates:
             raise ValueError("Не удалось распознать шаблоны для клипа.")
@@ -315,7 +321,8 @@ async def render_edit_templates_callback(c: CallbackQuery, state: FSMContext) ->
     await c.message.answer(
         "Введи список шаблонов через запятую.\n"
         f"Доступно: {', '.join(ALLOWED_TEMPLATES)}.\n"
-        "Например: mix_basic_circle,overlay",
+        "Например: mix_basic_circle,overlay\n"
+        "Напиши «отмена», чтобы вернуться.",
     )
     await state.set_state(RenderEditing.waiting_templates)
 
@@ -323,7 +330,7 @@ async def render_edit_templates_callback(c: CallbackQuery, state: FSMContext) ->
 @dp.callback_query(StateFilter(RenderEditing.choosing_action), F.data == "render_edit:subtitles")
 async def render_edit_subtitles_callback(c: CallbackQuery, state: FSMContext) -> None:
     await c.answer()
-    await c.message.answer("Введи режим субтитров: auto или none.")
+    await c.message.answer("Введи режим субтитров: auto или none. Напиши «отмена», чтобы вернуться.")
     await state.set_state(RenderEditing.waiting_subtitles)
 
 
@@ -334,7 +341,8 @@ async def render_edit_intro_callback(c: CallbackQuery, state: FSMContext) -> Non
         "Отправь параметры интро:\n"
         "• off — чтобы отключить\n"
         "• или строку вида: <URL> <длительность> [шаблоны]\n"
-        "Пример: https://example.com/intro.mp4 2.5 mix_basic_circle",
+        "Пример: https://example.com/intro.mp4 2.5 mix_basic_circle\n"
+        "Напиши «отмена», чтобы вернуться.",
     )
     await state.set_state(RenderEditing.waiting_intro)
 
@@ -345,7 +353,8 @@ async def render_edit_outro_callback(c: CallbackQuery, state: FSMContext) -> Non
     await c.message.answer(
         "Отправь параметры аутро:\n"
         "• off — чтобы отключить\n"
-        "• или строку вида: <URL> <длительность> [шаблоны]",
+        "• или строку вида: <URL> <длительность> [шаблоны]\n"
+        "Напиши «отмена», чтобы вернуться.",
     )
     await state.set_state(RenderEditing.waiting_outro)
 
@@ -355,7 +364,8 @@ async def render_edit_circle_callback(c: CallbackQuery, state: FSMContext) -> No
     await c.answer()
     await c.message.answer(
         "Введи параметры круга: <radius> <center_x> <center_y> [auto|manual]\n"
-        "Значения от 0 до 1. Пример: 0.32 0.48 0.55 auto",
+        "Значения от 0 до 1. Пример: 0.32 0.48 0.55 auto\n"
+        "Напиши «отмена», чтобы вернуться.",
     )
     await state.set_state(RenderEditing.waiting_circle)
 
@@ -364,7 +374,10 @@ async def render_edit_circle_callback(c: CallbackQuery, state: FSMContext) -> No
 async def render_edit_cancel_callback(c: CallbackQuery, state: FSMContext) -> None:
     await c.answer("Настройки закрыты")
     await state.clear()
-    await c.message.answer("Настройки рендера закрыты.", reply_markup=video_editing_menu())
+    await c.message.answer(
+        "Настройки рендера закрыты.",
+        reply_markup=_video_menu_for_user(c.from_user.id),
+    )
 
 
 @dp.callback_query(StateFilter(RenderEditing.choosing_action), F.data == "render_edit:rerender")
@@ -395,19 +408,22 @@ async def render_edit_rerender_callback(c: CallbackQuery, state: FSMContext) -> 
     await state.clear()
     await c.message.answer(
         "Можешь продолжить монтаж или завершить.",
-        reply_markup=video_editing_menu(),
+        reply_markup=_video_menu_for_user(c.from_user.id),
     )
 
 
 @dp.message(StateFilter(RenderEditing.waiting_templates))
 async def render_edit_templates_message(m: Message, state: FSMContext) -> None:
-    text = (m.text or "").strip()
+    if not m.text:
+        await m.answer("Отправь текст с шаблонами или напиши «отмена».")
+        return
+    text = m.text.strip()
     data = await state.get_data()
     overrides = _get_overrides_from_state(data)
     if _is_cancel_text(text):
         await _back_to_render_menu(m, state, overrides)
         return
-    templates = [item.strip() for item in text.split(",") if item.strip()]
+    templates = [item.strip() for item in re.split(r"[,\s]+", text) if item.strip()]
     if not templates:
         await m.answer("Нужно указать хотя бы один шаблон.")
         return
@@ -423,7 +439,10 @@ async def render_edit_templates_message(m: Message, state: FSMContext) -> None:
 
 @dp.message(StateFilter(RenderEditing.waiting_subtitles))
 async def render_edit_subtitles_message(m: Message, state: FSMContext) -> None:
-    text = (m.text or "").strip().lower()
+    if not m.text:
+        await m.answer("Отправь текст или напиши «отмена».")
+        return
+    text = m.text.strip().lower()
     data = await state.get_data()
     overrides = _get_overrides_from_state(data)
     if _is_cancel_text(text):
@@ -443,7 +462,10 @@ async def render_edit_subtitles_message(m: Message, state: FSMContext) -> None:
 
 @dp.message(StateFilter(RenderEditing.waiting_intro))
 async def render_edit_intro_message(m: Message, state: FSMContext) -> None:
-    text = (m.text or "").strip()
+    if not m.text:
+        await m.answer("Отправь текст или напиши «отмена».")
+        return
+    text = m.text.strip()
     data = await state.get_data()
     overrides = _get_overrides_from_state(data)
     if _is_cancel_text(text):
@@ -462,7 +484,10 @@ async def render_edit_intro_message(m: Message, state: FSMContext) -> None:
 
 @dp.message(StateFilter(RenderEditing.waiting_outro))
 async def render_edit_outro_message(m: Message, state: FSMContext) -> None:
-    text = (m.text or "").strip()
+    if not m.text:
+        await m.answer("Отправь текст или напиши «отмена».")
+        return
+    text = m.text.strip()
     data = await state.get_data()
     overrides = _get_overrides_from_state(data)
     if _is_cancel_text(text):
@@ -481,7 +506,10 @@ async def render_edit_outro_message(m: Message, state: FSMContext) -> None:
 
 @dp.message(StateFilter(RenderEditing.waiting_circle))
 async def render_edit_circle_message(m: Message, state: FSMContext) -> None:
-    text = (m.text or "").strip()
+    if not m.text:
+        await m.answer("Отправь текст или напиши «отмена».")
+        return
+    text = m.text.strip()
     data = await state.get_data()
     overrides = _get_overrides_from_state(data)
     if _is_cancel_text(text):
@@ -520,14 +548,14 @@ async def resume_editing_command(m: Message, state: FSMContext):
         await m.answer(
             "✅ Найдено отредактированное видео!\n\n"
             "Хочешь смонтировать еще раз или завершить?",
-            reply_markup=video_editing_menu()
+            reply_markup=_video_menu_for_user(m.from_user.id)
         )
     else:
         # Есть только исходное видео
         await m.answer(
             "✅ Найдено исходное видео!\n\n"
             "Хочешь смонтировать его?",
-            reply_markup=video_editing_menu()
+            reply_markup=_video_menu_for_user(m.from_user.id)
         )
     
     # Устанавливаем состояние
@@ -558,7 +586,7 @@ async def regenerate_overlay_command(m: Message, state: FSMContext):
         "✅ Кеш оверлеев очищен!\n\n"
         "Теперь при монтаже будет создан новый оверлей.\n"
         "Хочешь начать монтаж?",
-        reply_markup=video_editing_menu()
+        reply_markup=_video_menu_for_user(m.from_user.id)
     )
     
     # Устанавливаем состояние
@@ -615,7 +643,7 @@ async def start_video_editing(c: CallbackQuery, state: FSMContext):
                     await c.message.answer(
                         "❌ Не найдено фоновое видео.\n\n"
                         "Попробуйте еще раз или завершите:",
-                        reply_markup=video_editing_menu()
+                        reply_markup=_video_menu_for_user(c.from_user.id)
                     )
                     return
                 
@@ -672,7 +700,7 @@ async def start_video_editing(c: CallbackQuery, state: FSMContext):
             await c.message.answer(
                 "🎬 Хочешь смонтировать еще раз или завершить?\n\n"
                 "💡 Ты можешь попробовать другой вариант монтажа!",
-                reply_markup=video_editing_menu()
+                reply_markup=_video_menu_for_user(c.from_user.id)
             )
             
         except VideoEditingError as e:
@@ -683,7 +711,7 @@ async def start_video_editing(c: CallbackQuery, state: FSMContext):
             await c.message.answer(
                 "❌ Произошла ошибка при монтаже видео.\n\n"
                 "Попробуйте еще раз или завершите:",
-                reply_markup=video_editing_menu()
+                reply_markup=_video_menu_for_user(c.from_user.id)
             )
             # Остаемся в состоянии waiting_editing_decision
             
@@ -695,7 +723,7 @@ async def start_video_editing(c: CallbackQuery, state: FSMContext):
             await c.message.answer(
                 "❌ Произошла неожиданная ошибка.\n\n"
                 "Попробуйте еще раз или завершите:",
-                reply_markup=video_editing_menu()
+                reply_markup=_video_menu_for_user(c.from_user.id)
             )
             # Остаемся в состоянии waiting_editing_decision
         
