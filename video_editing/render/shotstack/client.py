@@ -36,6 +36,16 @@ SUBTITLE_THEME_STYLES: Dict[str, Dict[str, str]] = {
             "box-shadow: 0 12px 28px rgba(0,0,0,0.45);"
         ),
     },
+    "white_on_purple": {
+        "wrapper": "display: flex; justify-content: center; width: 100%;",
+        "text": (
+            "font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-weight: 700; "
+            "font-size: 48px; line-height: 1.3; color: #FFFFFF; background: linear-gradient(120deg,#6C4CFF,#5328C2); "
+            "padding: 20px 200px; border-radius: 48px; display: inline-flex; align-items: center; "
+            "justify-content: center; text-align: center; max-width: 70vw; word-break: break-word; "
+            "box-shadow: 0 12px 32px rgba(83,40,194,0.45);"
+        ),
+    },
 }
 
 

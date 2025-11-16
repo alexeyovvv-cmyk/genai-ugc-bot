@@ -119,9 +119,9 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--subtitle-theme",
-        choices=["light", "yellow_on_black"],
+        choices=["light", "yellow_on_black", "white_on_purple"],
         default="light",
-        help="Цветовая схема субтитров: light (по умолчанию) или yellow_on_black.",
+        help="Цветовая схема субтитров: light (по умолчанию), yellow_on_black или white_on_purple.",
     )
     parser.add_argument(
         "--transcript",

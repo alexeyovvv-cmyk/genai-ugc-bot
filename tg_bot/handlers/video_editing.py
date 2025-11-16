@@ -56,6 +56,18 @@ ALLOWED_TEMPLATES = [
     "mix_basic_overlay",
     "mix_basic_circle",
 ]
+TEMPLATE_LABELS = {
+    "overlay": "Оверлей",
+    "circle": "Круг",
+    "basic": "Базовый",
+    "mix_basic_overlay": "Базовый + Оверлей",
+    "mix_basic_circle": "Базовый + Круг",
+}
+SUBTITLE_THEME_LABELS = {
+    "light": "Светлая",
+    "yellow_on_black": "Жёлтый на чёрном",
+    "white_on_purple": "Белый на фиолетовом",
+}
 TEMPLATE_FALLBACK = ["mix_basic_circle"]
 DEFAULT_SUBTITLE_THEME = "light"
 DEFAULT_INTRO_LENGTH = 2.5
@@ -127,21 +139,26 @@ def _format_render_summary(overrides: dict) -> str:
     intro = overrides["intro"]
     outro = overrides["outro"]
     circle = overrides["circle"]
-    intro_desc = "вкл (файл)" if intro.get("r2_key") else ("вкл" if intro.get("enabled") else "выкл")
-    outro_desc = "вкл (файл)" if outro.get("r2_key") else ("вкл" if outro.get("enabled") else "выкл")
-    templates = ", ".join(overrides["templates"]) or "—"
+    intro_desc = "включено (файл)" if intro.get("r2_key") else ("включено" if intro.get("enabled") else "выключено")
+    outro_desc = "включено (файл)" if outro.get("r2_key") else ("включено" if outro.get("enabled") else "выключено")
+    templates = ", ".join(TEMPLATE_LABELS.get(item, item) for item in overrides["templates"]) or "—"
+    subtitles_theme = subtitles.get("theme", DEFAULT_SUBTITLE_THEME)
+    subtitles_theme_label = SUBTITLE_THEME_LABELS.get(subtitles_theme, subtitles_theme)
+    subtitles_mode = subtitles.get("mode", "auto")
+    subtitles_mode_label = {"auto": "Авто", "manual": "Ручные", "none": "Выключены"}.get(
+        subtitles_mode, subtitles_mode
+    )
     circle_desc = (
-        f"r={circle.get('radius', 0.35):.2f}, "
-        f"x={circle.get('center_x', 0.5):.2f}, "
-        f"y={circle.get('center_y', 0.5):.2f}"
+        f"радиус {circle.get('radius', 0.35) * 100:.0f}%, "
+        f"центр ({circle.get('center_x', 0.5) * 100:.0f}%, {circle.get('center_y', 0.5) * 100:.0f}%)"
     )
     return (
-        "⚙️ <b>Текущие настройки рендера</b>\n"
+        "⚙️ <b>Текущие настройки видео</b>\n"
         f"• Шаблоны: {templates}\n"
-        f"• Субтитры: {subtitles.get('mode', 'auto')} (тема: {subtitles.get('theme', DEFAULT_SUBTITLE_THEME)})\n"
+        f"• Субтитры: {subtitles_mode_label} (тема: {subtitles_theme_label})\n"
         f"• Интро: {intro_desc}\n"
         f"• Аутро: {outro_desc}\n"
-        f"• Circle: {circle_desc}"
+        f"• Круг: {circle_desc}"
     )
 
 
@@ -150,10 +167,11 @@ def _build_templates_keyboard(selected: Sequence[str]) -> InlineKeyboardMarkup:
     for template in ALLOWED_TEMPLATES:
         active = template in selected
         icon = "✅" if active else "⬜️"
+        label = TEMPLATE_LABELS.get(template, template)
         rows.append(
             [
                 InlineKeyboardButton(
-                    text=f"{icon} {template}",
+                    text=f"{icon} {label}",
                     callback_data=f"render_edit:tpl_toggle:{template}",
                 )
             ]
@@ -167,19 +185,38 @@ def _build_templates_keyboard(selected: Sequence[str]) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def _build_subtitles_keyboard(current_mode: str) -> InlineKeyboardMarkup:
+def _build_subtitles_keyboard(current_mode: str, current_theme: str) -> InlineKeyboardMarkup:
     auto_active = current_mode == "auto"
     none_active = current_mode == "none"
+    light_active = current_theme == "light"
+    yellow_active = current_theme == "yellow_on_black"
+    purple_active = current_theme == "white_on_purple"
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text=("✅ Auto" if auto_active else "Auto"),
+                    text=("✅ Авто" if auto_active else "Авто"),
                     callback_data="render_edit:subs_set:auto",
                 ),
                 InlineKeyboardButton(
-                    text=("✅ None" if none_active else "None"),
+                    text=("✅ Без субтитров" if none_active else "Без субтитров"),
                     callback_data="render_edit:subs_set:none",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text=("✅ Светлая" if light_active else "Светлая"),
+                    callback_data="render_edit:subs_theme:light",
+                ),
+                InlineKeyboardButton(
+                    text=("✅ Жёлтый/чёрный" if yellow_active else "Жёлтый/чёрный"),
+                    callback_data="render_edit:subs_theme:yellow_on_black",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text=("✅ Белый/фиолетовый" if purple_active else "Белый/фиолетовый"),
+                    callback_data="render_edit:subs_theme:white_on_purple",
                 ),
             ],
             [InlineKeyboardButton(text="⬅️ Назад", callback_data="render_edit:subs_back")],
@@ -383,11 +420,13 @@ async def render_info_command(m: Message, state: FSMContext) -> None:
     intro_settings = summary.get("intro_settings") or {}
     outro_settings = summary.get("outro_settings") or {}
     circle_settings = summary.get("circle_settings") or {}
+    friendly_templates = ", ".join(TEMPLATE_LABELS.get(item, item) for item in (summary.get("templates") or []))
     message = (
         "📋 <b>Последний рендер</b>\n"
         f"• Статус: {summary.get('status', 'unknown')}\n"
-        f"• Шаблоны: {', '.join(summary.get('templates') or []) or '—'}\n"
-        f"• Субтитры: {subtitles.get('mode', 'auto')} (тема: {subtitles.get('theme', 'light')})\n"
+        f"• Шаблоны: {friendly_templates or '—'}\n"
+        f"• Субтитры: {subtitles.get('mode', 'auto')} "
+        f"(тема: {SUBTITLE_THEME_LABELS.get(subtitles.get('theme', 'light'), subtitles.get('theme', 'light'))})\n"
         f"• Интро: {'вкл' if intro_settings.get('enabled') else 'выкл'}\n"
         f"• Аутро: {'вкл' if outro_settings.get('enabled') else 'выкл'}\n"
         f"• Круг: r={circle_settings.get('radius', '0.35')} "
@@ -461,9 +500,12 @@ async def render_edit_subtitles_callback(c: CallbackQuery, state: FSMContext) ->
     await c.answer()
     data = await state.get_data()
     overrides = _get_overrides_from_state(data)
-    keyboard = _build_subtitles_keyboard(overrides["subtitles"].get("mode", "auto"))
+    keyboard = _build_subtitles_keyboard(
+        overrides["subtitles"].get("mode", "auto"),
+        overrides["subtitles"].get("theme", DEFAULT_SUBTITLE_THEME),
+    )
     message = await c.message.answer(
-        "Выбери режим субтитров:",
+        "Выбери режим и тему субтитров:",
         reply_markup=keyboard,
     )
     await state.set_state(RenderEditing.editing_subtitles)
@@ -515,6 +557,25 @@ async def render_edit_subtitles_set(c: CallbackQuery, state: FSMContext) -> None
     await _back_to_render_menu(c.message, state, overrides)
     await _delete_message_safe(c.message)
     await state.update_data(subtitles_menu_message_id=None)
+
+
+@dp.callback_query(StateFilter(RenderEditing.editing_subtitles), F.data.startswith("render_edit:subs_theme:"))
+async def render_edit_subtitles_theme(c: CallbackQuery, state: FSMContext) -> None:
+    theme = c.data.split(":")[-1]
+    if theme not in SUBTITLE_THEME_LABELS:
+        await c.answer()
+        return
+    await c.answer("Тема применена")
+    data = await state.get_data()
+    overrides = _get_overrides_from_state(data)
+    overrides["subtitles"]["theme"] = theme
+    await _store_overrides(state, overrides)
+    await c.message.edit_reply_markup(
+        reply_markup=_build_subtitles_keyboard(
+            overrides["subtitles"].get("mode", "auto"),
+            overrides["subtitles"].get("theme", DEFAULT_SUBTITLE_THEME),
+        )
+    )
 
 
 @dp.callback_query(StateFilter(RenderEditing.editing_subtitles), F.data == "render_edit:subs_back")
@@ -608,8 +669,20 @@ async def render_edit_circle_callback(c: CallbackQuery, state: FSMContext) -> No
         "Введи параметры круга: <radius> <center_x> <center_y> [auto|manual]\n"
         "Значения от 0 до 1. Пример: 0.32 0.48 0.55 auto\n"
         "Напиши «отмена», чтобы вернуться.",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[[InlineKeyboardButton(text="⬅️ Назад", callback_data="render_edit:circle_back")]]
+        ),
     )
     await state.set_state(RenderEditing.waiting_circle)
+
+
+@dp.callback_query(StateFilter(RenderEditing.waiting_circle), F.data == "render_edit:circle_back")
+async def render_edit_circle_back(c: CallbackQuery, state: FSMContext) -> None:
+    await c.answer()
+    data = await state.get_data()
+    overrides = _get_overrides_from_state(data)
+    await _back_to_render_menu(c.message, state, overrides)
+    await _delete_message_safe(c.message)
 
 
 @dp.callback_query(StateFilter(RenderEditing.choosing_action), F.data == "render_edit:cancel")
@@ -647,7 +720,7 @@ async def render_edit_rerender_callback(c: CallbackQuery, state: FSMContext) -> 
         )
     else:
         await c.message.answer("Видео пересобрано, но ссылка недоступна.")
-    await state.clear()
+    await state.set_state(UGCCreation.waiting_editing_decision)
     await c.message.answer(
         "Можешь продолжить монтаж или завершить.",
         reply_markup=_video_menu_for_user(c.from_user.id),

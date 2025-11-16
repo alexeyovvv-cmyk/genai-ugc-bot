@@ -273,7 +273,7 @@ def render_settings_menu():
             InlineKeyboardButton(text="🏁 Аутро", callback_data="render_edit:outro"),
         ],
         [
-            InlineKeyboardButton(text="⭕ Circle", callback_data="render_edit:circle"),
+            InlineKeyboardButton(text="⭕ Круг", callback_data="render_edit:circle"),
         ],
         [
             InlineKeyboardButton(text="🚀 Пересобрать", callback_data="render_edit:rerender"),

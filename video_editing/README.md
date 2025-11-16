@@ -54,7 +54,7 @@ python3 autopipeline.py \
   [--outro-url "<outro.mp4>" --outro-length 2.5 --outro-templates overlay,circle] \
   [--templates overlay,circle,...] \
   [--background-video-length auto|fixed] \
-  [--subtitle-theme light|yellow_on_black] \
+  [--subtitle-theme light|yellow_on_black|white_on_purple] \
   [--no-circle-auto-center] \
   [--no-render]
 ```
@@ -71,7 +71,7 @@ python3 autopipeline.py \
   - `--subtitles-enabled auto` (по умолчанию): берёт `--subtitles`, иначе строит по `--transcript` через `ffmpeg silencedetect`; если ни того ни другого — подставляет дефолтные три реплики;
   - `manual`: использовать только `--subtitles`, иначе блок удаляется;
   - `none`: в итоговых шаблонах субтитров не будет;
-  - выбор темы через `--subtitle-theme light|yellow_on_black`;
+  - выбор темы через `--subtitle-theme light|yellow_on_black|white_on_purple`;
 - применяет `render/timeline/config/blocks.json` (опциональные блоки: интро, аутро, дополнительные оверлеи) и/или параметры `--intro-*`/`--outro-*` (можно настроить на лету без отдельного файла; по умолчанию файл пуст, так что блоки добавляются только явным решением пользователя);
 - сохраняет готовые спецификации в `build/auto_*`;
 - без `--no-render` сразу отправляет их в Shotstack и печатает ссылки на mp4.
