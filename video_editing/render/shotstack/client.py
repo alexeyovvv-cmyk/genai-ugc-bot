@@ -167,8 +167,18 @@ def apply_automation(spec: Dict[str, Any]) -> None:
         if source_duration is None or target_length is None or target_length <= 0:
             raise ShotstackError(f"Unable to compute speed for clip with src '{clip.get('src')}'")
 
-        clip["speed"] = source_duration / target_length
-        clip["length"] = target_length
+        # Calculate speed with Shotstack's maximum limit of 10x
+        calculated_speed = source_duration / target_length
+        MAX_SHOTSTACK_SPEED = 10.0
+        
+        if calculated_speed > MAX_SHOTSTACK_SPEED:
+            # If speed exceeds limit, cap it and adjust length accordingly
+            clip["speed"] = MAX_SHOTSTACK_SPEED
+            clip["length"] = source_duration / MAX_SHOTSTACK_SPEED
+            print(f"⚠️ Speed capped at {MAX_SHOTSTACK_SPEED}x (was {calculated_speed:.2f}x), adjusted length to {clip['length']:.2f}s")
+        else:
+            clip["speed"] = calculated_speed
+            clip["length"] = target_length
 
     for clip in clips:
         clip.pop("_source_duration", None)
