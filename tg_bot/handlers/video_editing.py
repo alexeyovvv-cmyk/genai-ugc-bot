@@ -10,10 +10,16 @@ This module handles:
 import copy
 import json
 import logging
-from typing import Sequence
+import os
+import re
+import tempfile
+import time
+from pathlib import Path
+from typing import Optional, Sequence
 
 from aiogram import F
-from aiogram.types import CallbackQuery, Message
+from aiogram.exceptions import TelegramBadRequest
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 from aiogram.fsm.context import FSMContext
 from aiogram.filters import StateFilter, Command
 
@@ -36,8 +42,10 @@ from tg_bot.services.video_editing_service import (
     rerender_last_render_session,
     VideoEditingError
 )
+from tg_bot.services.r2_service import upload_file, delete_file
 from tg_bot.dispatcher import dp
 from tg_bot.utils.logger import setup_logger
+from video_editing.common.media.meta import run_ffprobe_meta
 
 logger = setup_logger(__name__)
 
@@ -48,6 +56,18 @@ ALLOWED_TEMPLATES = [
     "mix_basic_overlay",
     "mix_basic_circle",
 ]
+TEMPLATE_LABELS = {
+    "overlay": "Оверлей",
+    "circle": "Круг",
+    "basic": "Базовый",
+    "mix_basic_overlay": "Базовый + Оверлей",
+    "mix_basic_circle": "Базовый + Круг",
+}
+SUBTITLE_THEME_LABELS = {
+    "light": "Светлая",
+    "yellow_on_black": "Жёлтый на чёрном",
+    "white_on_purple": "Белый на фиолетовом",
+}
 TEMPLATE_FALLBACK = ["mix_basic_circle"]
 DEFAULT_SUBTITLE_THEME = "light"
 DEFAULT_INTRO_LENGTH = 2.5
@@ -119,27 +139,113 @@ def _format_render_summary(overrides: dict) -> str:
     intro = overrides["intro"]
     outro = overrides["outro"]
     circle = overrides["circle"]
-    intro_desc = "вкл" if intro.get("enabled") else "выкл"
-    outro_desc = "вкл" if outro.get("enabled") else "выкл"
-    templates = ", ".join(overrides["templates"]) or "—"
+    intro_desc = "включено (файл)" if intro.get("r2_key") else ("включено" if intro.get("enabled") else "выключено")
+    outro_desc = "включено (файл)" if outro.get("r2_key") else ("включено" if outro.get("enabled") else "выключено")
+    templates = ", ".join(TEMPLATE_LABELS.get(item, item) for item in overrides["templates"]) or "—"
+    subtitles_theme = subtitles.get("theme", DEFAULT_SUBTITLE_THEME)
+    subtitles_theme_label = SUBTITLE_THEME_LABELS.get(subtitles_theme, subtitles_theme)
+    subtitles_mode = subtitles.get("mode", "auto")
+    subtitles_mode_label = {"auto": "Авто", "manual": "Ручные", "none": "Выключены"}.get(
+        subtitles_mode, subtitles_mode
+    )
     circle_desc = (
-        f"r={circle.get('radius', 0.35):.2f}, "
-        f"x={circle.get('center_x', 0.5):.2f}, "
-        f"y={circle.get('center_y', 0.5):.2f}"
+        f"радиус {circle.get('radius', 0.35) * 100:.0f}%, "
+        f"центр ({circle.get('center_x', 0.5) * 100:.0f}%, {circle.get('center_y', 0.5) * 100:.0f}%)"
     )
     return (
-        "⚙️ <b>Текущие настройки рендера</b>\n"
+        "⚙️ <b>Текущие настройки видео</b>\n"
         f"• Шаблоны: {templates}\n"
-        f"• Субтитры: {subtitles.get('mode', 'auto')} (тема: {subtitles.get('theme', DEFAULT_SUBTITLE_THEME)})\n"
+        f"• Субтитры: {subtitles_mode_label} (тема: {subtitles_theme_label})\n"
         f"• Интро: {intro_desc}\n"
         f"• Аутро: {outro_desc}\n"
-        f"• Circle: {circle_desc}"
+        f"• Круг: {circle_desc}"
     )
+
+
+def _build_templates_keyboard(selected: Sequence[str]) -> InlineKeyboardMarkup:
+    rows = []
+    for template in ALLOWED_TEMPLATES:
+        active = template in selected
+        icon = "✅" if active else "⬜️"
+        label = TEMPLATE_LABELS.get(template, template)
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"{icon} {label}",
+                    callback_data=f"render_edit:tpl_toggle:{template}",
+                )
+            ]
+        )
+    rows.append(
+        [
+            InlineKeyboardButton(text="✅ Готово", callback_data="render_edit:tpl_done"),
+            InlineKeyboardButton(text="⬅️ Назад", callback_data="render_edit:tpl_cancel"),
+        ]
+    )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def _build_subtitles_keyboard(current_mode: str, current_theme: str) -> InlineKeyboardMarkup:
+    auto_active = current_mode == "auto"
+    none_active = current_mode == "none"
+    light_active = current_theme == "light"
+    yellow_active = current_theme == "yellow_on_black"
+    purple_active = current_theme == "white_on_purple"
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=("✅ Авто" if auto_active else "Авто"),
+                    callback_data="render_edit:subs_set:auto",
+                ),
+                InlineKeyboardButton(
+                    text=("✅ Без субтитров" if none_active else "Без субтитров"),
+                    callback_data="render_edit:subs_set:none",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text=("✅ Светлая" if light_active else "Светлая"),
+                    callback_data="render_edit:subs_theme:light",
+                ),
+                InlineKeyboardButton(
+                    text=("✅ Жёлтый/чёрный" if yellow_active else "Жёлтый/чёрный"),
+                    callback_data="render_edit:subs_theme:yellow_on_black",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text=("✅ Белый/фиолетовый" if purple_active else "Белый/фиолетовый"),
+                    callback_data="render_edit:subs_theme:white_on_purple",
+                ),
+            ],
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="render_edit:subs_back")],
+        ]
+    )
+
+
+def _clip_has_asset(settings: dict) -> bool:
+    return bool(settings.get("r2_key") or settings.get("url"))
+
+
+def _build_clip_menu(kind: str, has_asset: bool) -> InlineKeyboardMarkup:
+    rows = [
+        [InlineKeyboardButton(text="📤 Загрузить файл", callback_data=f"render_edit:{kind}_upload")],
+    ]
+    if has_asset:
+        rows.append([InlineKeyboardButton(text="🚫 Отключить", callback_data=f"render_edit:{kind}_disable")])
+    rows.append([InlineKeyboardButton(text="⬅️ Назад", callback_data=f"render_edit:{kind}_back")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 async def _send_render_settings_message(target_message: Message, overrides: dict) -> None:
     text = _format_render_summary(overrides)
     await target_message.answer(text, reply_markup=render_settings_menu(), parse_mode="HTML")
+
+
+def _video_menu_for_user(user_id: int):
+    has_render = get_render_session_summary(user_id) is not None
+    return video_editing_menu(has_render)
 
 
 async def _start_render_editing_flow(msg_or_cb_message: Message, user_id: int, state: FSMContext) -> None:
@@ -169,39 +275,103 @@ async def _back_to_render_menu(message: Message, state: FSMContext, overrides: d
     await _send_render_settings_message(message, overrides)
 
 
-def _parse_clip_settings(
-    text: str,
-    default_templates: Sequence[str],
-) -> dict:
-    text = text.strip()
-    if text.lower() == "off":
-        return {
-            "enabled": False,
-            "url": None,
-            "length": DEFAULT_INTRO_LENGTH,
-            "templates": None,
-        }
-    parts = text.split()
-    if len(parts) < 2:
-        raise ValueError("Нужно указать URL и длительность.")
-    url = parts[0]
+async def _delete_message_safe(message: Message) -> None:
     try:
-        length = float(parts[1])
-    except ValueError as exc:
-        raise ValueError("Длительность должна быть числом.") from exc
-    templates = default_templates
-    if len(parts) >= 3:
-        raw_templates = [item.strip() for item in parts[2].split(",") if item.strip()]
-        valid_templates = [item for item in raw_templates if item in ALLOWED_TEMPLATES]
-        if not valid_templates:
-            raise ValueError("Не удалось распознать шаблоны для клипа.")
-        templates = valid_templates
-    return {
-        "enabled": True,
-        "url": url,
-        "length": length,
-        "templates": templates,
-    }
+        await message.delete()
+    except TelegramBadRequest:
+        pass
+
+
+def _cleanup_clip_asset(clip_settings: dict) -> None:
+    old_key = clip_settings.get("r2_key")
+    if old_key:
+        try:
+            delete_file(old_key)
+        except Exception:
+            pass
+    clip_settings["r2_key"] = None
+    clip_settings["url"] = None
+
+
+def _clip_display_name(kind: str) -> str:
+    return "интро" if kind == "intro" else "аутро"
+
+
+def _extract_video_file_info(message: Message) -> Optional[dict]:
+    if message.video:
+        return {
+            "file_id": message.video.file_id,
+            "file_name": message.video.file_name or "video.mp4",
+            "duration": message.video.duration,
+        }
+    document = message.document
+    if document and document.mime_type and document.mime_type.lower().startswith("video"):
+        return {
+            "file_id": document.file_id,
+            "file_name": document.file_name or "video.mp4",
+            "duration": getattr(document, "duration", None),
+        }
+    return None
+
+
+async def _process_clip_upload_message(message: Message, state: FSMContext, clip_key: str) -> None:
+    file_info = _extract_video_file_info(message)
+    if not file_info:
+        await message.answer("Отправь видеофайл (MP4/MOV) или напиши «отмена».")
+        return False
+
+    from tg_bot.main import bot  # импорт внутри функции, чтобы избежать циклических зависимостей
+
+    telegram_file = await bot.get_file(file_info["file_id"])
+    suffix = Path(telegram_file.file_path).suffix or Path(file_info["file_name"]).suffix or ".mp4"
+    timestamp = int(time.time())
+
+    with tempfile.TemporaryDirectory(prefix=f"{clip_key}_upload_") as tmpdir:
+        tmp_path = Path(tmpdir) / f"{clip_key}_{timestamp}{suffix}"
+        await bot.download_file(telegram_file.file_path, tmp_path)
+        duration = file_info.get("duration")
+        if not duration:
+            try:
+                meta = run_ffprobe_meta(tmp_path, error_cls=RuntimeError)
+                duration = meta.duration
+            except Exception:
+                duration = None
+        r2_key = f"users/{message.from_user.id}/{clip_key}s/{clip_key}_{timestamp}{suffix}"
+        if not upload_file(str(tmp_path), r2_key):
+            await message.answer("❌ Не удалось сохранить файл. Попробуй еще раз.")
+            return False
+
+    data = await state.get_data()
+    overrides = _get_overrides_from_state(data)
+    clip_settings = overrides[clip_key]
+    _cleanup_clip_asset(clip_settings)
+    clip_settings["enabled"] = True
+    clip_settings["r2_key"] = r2_key
+    clip_settings["url"] = None
+    clip_settings["length"] = round(float(duration or DEFAULT_INTRO_LENGTH), 3)
+    clip_settings.setdefault("templates", overrides["templates"])
+
+    await _store_overrides(state, overrides)
+    await message.answer(f"✅ { _clip_display_name(clip_key).capitalize() } обновлено.")
+    await state.set_state(RenderEditing.choosing_action)
+    await _send_render_settings_message(message, overrides)
+    return True
+
+
+async def _open_clip_menu(callback: CallbackQuery, state: FSMContext, clip_key: str) -> None:
+    data = await state.get_data()
+    overrides = _get_overrides_from_state(data)
+    keyboard = _build_clip_menu(clip_key, _clip_has_asset(overrides[clip_key]))
+    message = await callback.message.answer(
+        f"Настройка { _clip_display_name(clip_key) }:",
+        reply_markup=keyboard,
+    )
+    await state.update_data({f"{clip_key}_menu_message_id": message.message_id})
+
+
+async def _close_clip_menu(message: Message, state: FSMContext, clip_key: str) -> None:
+    await _delete_message_safe(message)
+    await state.update_data({f"{clip_key}_menu_message_id": None})
 
 
 def _parse_circle_settings(text: str, current: dict) -> dict:
@@ -250,11 +420,13 @@ async def render_info_command(m: Message, state: FSMContext) -> None:
     intro_settings = summary.get("intro_settings") or {}
     outro_settings = summary.get("outro_settings") or {}
     circle_settings = summary.get("circle_settings") or {}
+    friendly_templates = ", ".join(TEMPLATE_LABELS.get(item, item) for item in (summary.get("templates") or []))
     message = (
         "📋 <b>Последний рендер</b>\n"
         f"• Статус: {summary.get('status', 'unknown')}\n"
-        f"• Шаблоны: {', '.join(summary.get('templates') or []) or '—'}\n"
-        f"• Субтитры: {subtitles.get('mode', 'auto')} (тема: {subtitles.get('theme', 'light')})\n"
+        f"• Шаблоны: {friendly_templates or '—'}\n"
+        f"• Субтитры: {subtitles.get('mode', 'auto')} "
+        f"(тема: {SUBTITLE_THEME_LABELS.get(subtitles.get('theme', 'light'), subtitles.get('theme', 'light'))})\n"
         f"• Интро: {'вкл' if intro_settings.get('enabled') else 'выкл'}\n"
         f"• Аутро: {'вкл' if outro_settings.get('enabled') else 'выкл'}\n"
         f"• Круг: r={circle_settings.get('radius', '0.35')} "
@@ -312,42 +484,182 @@ async def render_edit_open_callback(c: CallbackQuery, state: FSMContext) -> None
 @dp.callback_query(StateFilter(RenderEditing.choosing_action), F.data == "render_edit:templates")
 async def render_edit_templates_callback(c: CallbackQuery, state: FSMContext) -> None:
     await c.answer()
-    await c.message.answer(
-        "Введи список шаблонов через запятую.\n"
-        f"Доступно: {', '.join(ALLOWED_TEMPLATES)}.\n"
-        "Например: mix_basic_circle,overlay",
+    data = await state.get_data()
+    overrides = _get_overrides_from_state(data)
+    keyboard = _build_templates_keyboard(overrides["templates"])
+    message = await c.message.answer(
+        "Выбери шаблоны, которые нужно рендерить:",
+        reply_markup=keyboard,
     )
-    await state.set_state(RenderEditing.waiting_templates)
+    await state.set_state(RenderEditing.editing_templates)
+    await state.update_data(templates_menu_message_id=message.message_id)
 
 
 @dp.callback_query(StateFilter(RenderEditing.choosing_action), F.data == "render_edit:subtitles")
 async def render_edit_subtitles_callback(c: CallbackQuery, state: FSMContext) -> None:
     await c.answer()
-    await c.message.answer("Введи режим субтитров: auto или none.")
-    await state.set_state(RenderEditing.waiting_subtitles)
+    data = await state.get_data()
+    overrides = _get_overrides_from_state(data)
+    keyboard = _build_subtitles_keyboard(
+        overrides["subtitles"].get("mode", "auto"),
+        overrides["subtitles"].get("theme", DEFAULT_SUBTITLE_THEME),
+    )
+    message = await c.message.answer(
+        "Выбери режим и тему субтитров:",
+        reply_markup=keyboard,
+    )
+    await state.set_state(RenderEditing.editing_subtitles)
+    await state.update_data(subtitles_menu_message_id=message.message_id)
+
+
+@dp.callback_query(StateFilter(RenderEditing.editing_templates), F.data.startswith("render_edit:tpl_toggle:"))
+async def render_edit_templates_toggle(c: CallbackQuery, state: FSMContext) -> None:
+    template = c.data.split(":")[-1]
+    data = await state.get_data()
+    overrides = _get_overrides_from_state(data)
+    selected = overrides["templates"]
+    if template in selected:
+        if len(selected) == 1:
+            await c.answer("Нельзя убрать последний шаблон", show_alert=True)
+            return
+        selected = [item for item in selected if item != template]
+    else:
+        selected = selected + [template]
+    overrides["templates"] = selected
+    await _store_overrides(state, overrides)
+    await c.message.edit_reply_markup(reply_markup=_build_templates_keyboard(selected))
+    await c.answer("Обновлено")
+
+
+@dp.callback_query(StateFilter(RenderEditing.editing_templates), F.data.in_(["render_edit:tpl_done", "render_edit:tpl_cancel"]))
+async def render_edit_templates_finish(c: CallbackQuery, state: FSMContext) -> None:
+    await c.answer()
+    data = await state.get_data()
+    overrides = _get_overrides_from_state(data)
+    await _back_to_render_menu(c.message, state, overrides)
+    await _delete_message_safe(c.message)
+    await state.update_data(templates_menu_message_id=None)
+
+
+@dp.callback_query(StateFilter(RenderEditing.editing_subtitles), F.data.startswith("render_edit:subs_set:"))
+async def render_edit_subtitles_set(c: CallbackQuery, state: FSMContext) -> None:
+    mode = c.data.split(":")[-1]
+    await c.answer()
+    if mode not in {"auto", "none"}:
+        return
+    data = await state.get_data()
+    overrides = _get_overrides_from_state(data)
+    overrides["subtitles"]["mode"] = mode
+    if mode == "none":
+        overrides["subtitles"]["transcript"] = None
+        overrides["subtitles"]["file_r2_key"] = None
+    await _store_overrides(state, overrides)
+    await _back_to_render_menu(c.message, state, overrides)
+    await _delete_message_safe(c.message)
+    await state.update_data(subtitles_menu_message_id=None)
+
+
+@dp.callback_query(StateFilter(RenderEditing.editing_subtitles), F.data.startswith("render_edit:subs_theme:"))
+async def render_edit_subtitles_theme(c: CallbackQuery, state: FSMContext) -> None:
+    theme = c.data.split(":")[-1]
+    if theme not in SUBTITLE_THEME_LABELS:
+        await c.answer()
+        return
+    await c.answer("Тема применена")
+    data = await state.get_data()
+    overrides = _get_overrides_from_state(data)
+    overrides["subtitles"]["theme"] = theme
+    await _store_overrides(state, overrides)
+    await c.message.edit_reply_markup(
+        reply_markup=_build_subtitles_keyboard(
+            overrides["subtitles"].get("mode", "auto"),
+            overrides["subtitles"].get("theme", DEFAULT_SUBTITLE_THEME),
+        )
+    )
+
+
+@dp.callback_query(StateFilter(RenderEditing.editing_subtitles), F.data == "render_edit:subs_back")
+async def render_edit_subtitles_back(c: CallbackQuery, state: FSMContext) -> None:
+    await c.answer()
+    data = await state.get_data()
+    overrides = _get_overrides_from_state(data)
+    await _back_to_render_menu(c.message, state, overrides)
+    await _delete_message_safe(c.message)
+    await state.update_data(subtitles_menu_message_id=None)
 
 
 @dp.callback_query(StateFilter(RenderEditing.choosing_action), F.data == "render_edit:intro")
 async def render_edit_intro_callback(c: CallbackQuery, state: FSMContext) -> None:
     await c.answer()
-    await c.message.answer(
-        "Отправь параметры интро:\n"
-        "• off — чтобы отключить\n"
-        "• или строку вида: <URL> <длительность> [шаблоны]\n"
-        "Пример: https://example.com/intro.mp4 2.5 mix_basic_circle",
-    )
-    await state.set_state(RenderEditing.waiting_intro)
+    await _open_clip_menu(c, state, "intro")
 
 
 @dp.callback_query(StateFilter(RenderEditing.choosing_action), F.data == "render_edit:outro")
 async def render_edit_outro_callback(c: CallbackQuery, state: FSMContext) -> None:
     await c.answer()
-    await c.message.answer(
-        "Отправь параметры аутро:\n"
-        "• off — чтобы отключить\n"
-        "• или строку вида: <URL> <длительность> [шаблоны]",
-    )
-    await state.set_state(RenderEditing.waiting_outro)
+    await _open_clip_menu(c, state, "outro")
+
+
+@dp.callback_query(StateFilter(RenderEditing.choosing_action), F.data == "render_edit:intro_back")
+async def render_edit_intro_back(c: CallbackQuery, state: FSMContext) -> None:
+    await c.answer()
+    data = await state.get_data()
+    overrides = _get_overrides_from_state(data)
+    await _back_to_render_menu(c.message, state, overrides)
+    await _close_clip_menu(c.message, state, "intro")
+
+
+@dp.callback_query(StateFilter(RenderEditing.choosing_action), F.data == "render_edit:outro_back")
+async def render_edit_outro_back(c: CallbackQuery, state: FSMContext) -> None:
+    await c.answer()
+    data = await state.get_data()
+    overrides = _get_overrides_from_state(data)
+    await _back_to_render_menu(c.message, state, overrides)
+    await _close_clip_menu(c.message, state, "outro")
+
+
+@dp.callback_query(StateFilter(RenderEditing.choosing_action), F.data == "render_edit:intro_disable")
+async def render_edit_intro_disable(c: CallbackQuery, state: FSMContext) -> None:
+    await c.answer()
+    data = await state.get_data()
+    overrides = _get_overrides_from_state(data)
+    clip = overrides["intro"]
+    _cleanup_clip_asset(clip)
+    clip["enabled"] = False
+    await _store_overrides(state, overrides)
+    await _back_to_render_menu(c.message, state, overrides)
+    await _close_clip_menu(c.message, state, "intro")
+
+
+@dp.callback_query(StateFilter(RenderEditing.choosing_action), F.data == "render_edit:outro_disable")
+async def render_edit_outro_disable(c: CallbackQuery, state: FSMContext) -> None:
+    await c.answer()
+    data = await state.get_data()
+    overrides = _get_overrides_from_state(data)
+    clip = overrides["outro"]
+    _cleanup_clip_asset(clip)
+    clip["enabled"] = False
+    await _store_overrides(state, overrides)
+    await _back_to_render_menu(c.message, state, overrides)
+    await _close_clip_menu(c.message, state, "outro")
+
+
+@dp.callback_query(StateFilter(RenderEditing.choosing_action), F.data == "render_edit:intro_upload")
+async def render_edit_intro_upload(c: CallbackQuery, state: FSMContext) -> None:
+    await c.answer()
+    await _close_clip_menu(c.message, state, "intro")
+    await state.set_state(RenderEditing.waiting_intro_upload)
+    await state.update_data(clip_upload_kind="intro")
+    await c.message.answer("Отправь видеофайл для интро (или напиши «отмена»).")
+
+
+@dp.callback_query(StateFilter(RenderEditing.choosing_action), F.data == "render_edit:outro_upload")
+async def render_edit_outro_upload(c: CallbackQuery, state: FSMContext) -> None:
+    await c.answer()
+    await _close_clip_menu(c.message, state, "outro")
+    await state.set_state(RenderEditing.waiting_outro_upload)
+    await state.update_data(clip_upload_kind="outro")
+    await c.message.answer("Отправь видеофайл для аутро (или напиши «отмена»).")
 
 
 @dp.callback_query(StateFilter(RenderEditing.choosing_action), F.data == "render_edit:circle")
@@ -355,16 +667,32 @@ async def render_edit_circle_callback(c: CallbackQuery, state: FSMContext) -> No
     await c.answer()
     await c.message.answer(
         "Введи параметры круга: <radius> <center_x> <center_y> [auto|manual]\n"
-        "Значения от 0 до 1. Пример: 0.32 0.48 0.55 auto",
+        "Значения от 0 до 1. Пример: 0.32 0.48 0.55 auto\n"
+        "Напиши «отмена», чтобы вернуться.",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[[InlineKeyboardButton(text="⬅️ Назад", callback_data="render_edit:circle_back")]]
+        ),
     )
     await state.set_state(RenderEditing.waiting_circle)
+
+
+@dp.callback_query(StateFilter(RenderEditing.waiting_circle), F.data == "render_edit:circle_back")
+async def render_edit_circle_back(c: CallbackQuery, state: FSMContext) -> None:
+    await c.answer()
+    data = await state.get_data()
+    overrides = _get_overrides_from_state(data)
+    await _back_to_render_menu(c.message, state, overrides)
+    await _delete_message_safe(c.message)
 
 
 @dp.callback_query(StateFilter(RenderEditing.choosing_action), F.data == "render_edit:cancel")
 async def render_edit_cancel_callback(c: CallbackQuery, state: FSMContext) -> None:
     await c.answer("Настройки закрыты")
     await state.clear()
-    await c.message.answer("Настройки рендера закрыты.", reply_markup=video_editing_menu())
+    await c.message.answer(
+        "Настройки рендера закрыты.",
+        reply_markup=_video_menu_for_user(c.from_user.id),
+    )
 
 
 @dp.callback_query(StateFilter(RenderEditing.choosing_action), F.data == "render_edit:rerender")
@@ -392,96 +720,49 @@ async def render_edit_rerender_callback(c: CallbackQuery, state: FSMContext) -> 
         )
     else:
         await c.message.answer("Видео пересобрано, но ссылка недоступна.")
-    await state.clear()
+    await state.set_state(UGCCreation.waiting_editing_decision)
     await c.message.answer(
         "Можешь продолжить монтаж или завершить.",
-        reply_markup=video_editing_menu(),
+        reply_markup=_video_menu_for_user(c.from_user.id),
     )
 
 
-@dp.message(StateFilter(RenderEditing.waiting_templates))
-async def render_edit_templates_message(m: Message, state: FSMContext) -> None:
-    text = (m.text or "").strip()
-    data = await state.get_data()
-    overrides = _get_overrides_from_state(data)
-    if _is_cancel_text(text):
-        await _back_to_render_menu(m, state, overrides)
+@dp.message(StateFilter(RenderEditing.waiting_intro_upload))
+async def render_edit_intro_upload_message(m: Message, state: FSMContext) -> None:
+    if m.text and _is_cancel_text(m.text):
+        data = await state.get_data()
+        overrides = _get_overrides_from_state(data)
+        await state.set_state(RenderEditing.choosing_action)
+        await m.answer("Загрузка интро отменена.")
+        await _send_render_settings_message(m, overrides)
+        await state.update_data(clip_upload_kind=None)
         return
-    templates = [item.strip() for item in text.split(",") if item.strip()]
-    if not templates:
-        await m.answer("Нужно указать хотя бы один шаблон.")
-        return
-    invalid = [item for item in templates if item not in ALLOWED_TEMPLATES]
-    if invalid:
-        await m.answer(f"Некорректные шаблоны: {', '.join(invalid)}")
-        return
-    overrides["templates"] = templates
-    await _store_overrides(state, overrides)
-    await m.answer("✅ Шаблоны обновлены.")
-    await _back_to_render_menu(m, state, overrides)
+    success = await _process_clip_upload_message(m, state, "intro")
+    if success:
+        await state.update_data(clip_upload_kind=None)
 
 
-@dp.message(StateFilter(RenderEditing.waiting_subtitles))
-async def render_edit_subtitles_message(m: Message, state: FSMContext) -> None:
-    text = (m.text or "").strip().lower()
-    data = await state.get_data()
-    overrides = _get_overrides_from_state(data)
-    if _is_cancel_text(text):
-        await _back_to_render_menu(m, state, overrides)
+@dp.message(StateFilter(RenderEditing.waiting_outro_upload))
+async def render_edit_outro_upload_message(m: Message, state: FSMContext) -> None:
+    if m.text and _is_cancel_text(m.text):
+        data = await state.get_data()
+        overrides = _get_overrides_from_state(data)
+        await state.set_state(RenderEditing.choosing_action)
+        await m.answer("Загрузка аутро отменена.")
+        await _send_render_settings_message(m, overrides)
+        await state.update_data(clip_upload_kind=None)
         return
-    if text not in {"auto", "none"}:
-        await m.answer("Используй значения auto или none.")
-        return
-    overrides["subtitles"]["mode"] = text
-    if text == "none":
-        overrides["subtitles"]["transcript"] = None
-        overrides["subtitles"]["file_r2_key"] = None
-    await _store_overrides(state, overrides)
-    await m.answer("✅ Режим субтитров обновлен.")
-    await _back_to_render_menu(m, state, overrides)
-
-
-@dp.message(StateFilter(RenderEditing.waiting_intro))
-async def render_edit_intro_message(m: Message, state: FSMContext) -> None:
-    text = (m.text or "").strip()
-    data = await state.get_data()
-    overrides = _get_overrides_from_state(data)
-    if _is_cancel_text(text):
-        await _back_to_render_menu(m, state, overrides)
-        return
-    try:
-        clip_settings = _parse_clip_settings(text, overrides["templates"])
-    except ValueError as exc:
-        await m.answer(f"⚠️ {exc}")
-        return
-    overrides["intro"].update(clip_settings)
-    await _store_overrides(state, overrides)
-    await m.answer("✅ Настройки интро обновлены.")
-    await _back_to_render_menu(m, state, overrides)
-
-
-@dp.message(StateFilter(RenderEditing.waiting_outro))
-async def render_edit_outro_message(m: Message, state: FSMContext) -> None:
-    text = (m.text or "").strip()
-    data = await state.get_data()
-    overrides = _get_overrides_from_state(data)
-    if _is_cancel_text(text):
-        await _back_to_render_menu(m, state, overrides)
-        return
-    try:
-        clip_settings = _parse_clip_settings(text, overrides["templates"])
-    except ValueError as exc:
-        await m.answer(f"⚠️ {exc}")
-        return
-    overrides["outro"].update(clip_settings)
-    await _store_overrides(state, overrides)
-    await m.answer("✅ Настройки аутро обновлены.")
-    await _back_to_render_menu(m, state, overrides)
+    success = await _process_clip_upload_message(m, state, "outro")
+    if success:
+        await state.update_data(clip_upload_kind=None)
 
 
 @dp.message(StateFilter(RenderEditing.waiting_circle))
 async def render_edit_circle_message(m: Message, state: FSMContext) -> None:
-    text = (m.text or "").strip()
+    if not m.text:
+        await m.answer("Отправь текст или напиши «отмена».")
+        return
+    text = m.text.strip()
     data = await state.get_data()
     overrides = _get_overrides_from_state(data)
     if _is_cancel_text(text):
@@ -520,14 +801,14 @@ async def resume_editing_command(m: Message, state: FSMContext):
         await m.answer(
             "✅ Найдено отредактированное видео!\n\n"
             "Хочешь смонтировать еще раз или завершить?",
-            reply_markup=video_editing_menu()
+            reply_markup=_video_menu_for_user(m.from_user.id)
         )
     else:
         # Есть только исходное видео
         await m.answer(
             "✅ Найдено исходное видео!\n\n"
             "Хочешь смонтировать его?",
-            reply_markup=video_editing_menu()
+            reply_markup=_video_menu_for_user(m.from_user.id)
         )
     
     # Устанавливаем состояние
@@ -558,7 +839,7 @@ async def regenerate_overlay_command(m: Message, state: FSMContext):
         "✅ Кеш оверлеев очищен!\n\n"
         "Теперь при монтаже будет создан новый оверлей.\n"
         "Хочешь начать монтаж?",
-        reply_markup=video_editing_menu()
+        reply_markup=_video_menu_for_user(m.from_user.id)
     )
     
     # Устанавливаем состояние
@@ -615,7 +896,7 @@ async def start_video_editing(c: CallbackQuery, state: FSMContext):
                     await c.message.answer(
                         "❌ Не найдено фоновое видео.\n\n"
                         "Попробуйте еще раз или завершите:",
-                        reply_markup=video_editing_menu()
+                        reply_markup=_video_menu_for_user(c.from_user.id)
                     )
                     return
                 
@@ -672,7 +953,7 @@ async def start_video_editing(c: CallbackQuery, state: FSMContext):
             await c.message.answer(
                 "🎬 Хочешь смонтировать еще раз или завершить?\n\n"
                 "💡 Ты можешь попробовать другой вариант монтажа!",
-                reply_markup=video_editing_menu()
+                reply_markup=_video_menu_for_user(c.from_user.id)
             )
             
         except VideoEditingError as e:
@@ -683,7 +964,7 @@ async def start_video_editing(c: CallbackQuery, state: FSMContext):
             await c.message.answer(
                 "❌ Произошла ошибка при монтаже видео.\n\n"
                 "Попробуйте еще раз или завершите:",
-                reply_markup=video_editing_menu()
+                reply_markup=_video_menu_for_user(c.from_user.id)
             )
             # Остаемся в состоянии waiting_editing_decision
             
@@ -695,7 +976,7 @@ async def start_video_editing(c: CallbackQuery, state: FSMContext):
             await c.message.answer(
                 "❌ Произошла неожиданная ошибка.\n\n"
                 "Попробуйте еще раз или завершите:",
-                reply_markup=video_editing_menu()
+                reply_markup=_video_menu_for_user(c.from_user.id)
             )
             # Остаемся в состоянии waiting_editing_decision
         

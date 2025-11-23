@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 import requests
 from PIL import Image  # type: ignore
 
-from render.shotstack import ShotstackError, probe_duration
+from video_editing.render.shotstack import ShotstackError, probe_duration
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tiff"}
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi", ".mpg", ".mpeg"}
