@@ -102,7 +102,7 @@ def parse_emotion_segments(enhanced_text: str) -> List[Dict[str, str]]:
     """
     Parse enhanced text into emotion segments.
     
-    Expected format: "[emotion] text\n[emotion] text"
+    Expected format: "[emotion] text\n[emotion] text" or "[emotion] text [emotion] text"
     
     Args:
         enhanced_text: Text with emotion tags from OpenAI
@@ -115,15 +115,20 @@ def parse_emotion_segments(enhanced_text: str) -> List[Dict[str, str]]:
         ]
     """
     logger.info(f"[ENHANCEMENT] Parsing emotion segments from enhanced text")
+    logger.info(f"[ENHANCEMENT] Raw enhanced text: {enhanced_text}")
     
-    # Regex pattern: [emotion] text до следующего [emotion] или конца
-    pattern = r'\[(\w+)\]\s*(.+?)(?=\n\[|\Z)'
+    # Regex pattern: [emotion] text до следующего [emotion] (с переносом или без) или конца
+    # Changed from \n\[ to just \[ to catch emotions on the same line
+    pattern = r'\[(\w+)\]\s*(.+?)(?=\s*\[|\Z)'
     matches = re.findall(pattern, enhanced_text, re.DOTALL)
     
+    logger.info(f"[ENHANCEMENT] Regex found {len(matches)} matches")
+    
     segments = []
-    for emotion, text in matches:
+    for i, (emotion, text) in enumerate(matches):
         # Clean up text (remove extra whitespace, newlines)
         text_clean = text.strip()
+        logger.info(f"[ENHANCEMENT] Match {i+1}: emotion='{emotion}', text_raw='{text[:50]}...', text_clean='{text_clean[:50]}...'")
         if text_clean:
             segments.append({
                 "emotion": emotion.strip(),
@@ -132,7 +137,7 @@ def parse_emotion_segments(enhanced_text: str) -> List[Dict[str, str]]:
     
     logger.info(f"[ENHANCEMENT] Parsed {len(segments)} emotion segments")
     for i, seg in enumerate(segments):
-        logger.info(f"[ENHANCEMENT] Segment {i+1}: emotion={seg['emotion']}, text={seg['text'][:30]}...")
+        logger.info(f"[ENHANCEMENT] Segment {i+1}: emotion={seg['emotion']}, text={seg['text'][:50]}...")
     
     return segments
 
